@@ -90,6 +90,9 @@ interface SessionDao {
 
     @Insert
     suspend fun insert(session: Session): Long
+
+    @Query("DELETE FROM sessions WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<Long>)
 }
 
 // ---------- Database ----------

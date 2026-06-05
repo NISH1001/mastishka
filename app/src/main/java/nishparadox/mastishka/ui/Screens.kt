@@ -33,6 +33,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
@@ -42,6 +44,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -60,6 +63,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -426,13 +430,40 @@ private fun SelectableChip(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HistoryScreen(sessions: List<Session>, onBack: () -> Unit) {
+fun HistoryScreen(
+    sessions: List<Session>,
+    onBack: () -> Unit,
+    onDelete: (List<Long>) -> Unit,
+) {
+    val selected = remember { mutableStateListOf<Long>() }
+    var confirmDelete by remember { mutableStateOf(false) }
+    val selecting = selected.isNotEmpty()
+
+    fun toggle(id: Long) {
+        if (selected.contains(id)) selected.remove(id) else selected.add(id)
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Past sits") },
+                title = { Text(if (selecting) "${selected.size} selected" else "Past sits") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") }
+                    if (selecting) {
+                        IconButton(onClick = { selected.clear() }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Clear selection")
+                        }
+                    } else {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    }
+                },
+                actions = {
+                    if (selecting) {
+                        IconButton(onClick = { confirmDelete = true }) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Delete selected")
+                        }
+                    }
                 },
             )
         },
@@ -445,30 +476,67 @@ fun HistoryScreen(sessions: List<Session>, onBack: () -> Unit) {
                     "No sits yet. Your finished sits will appear here.",
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                 )
+            } else {
+                Text(
+                    "Tap a sit to select, then delete.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                )
+                Spacer(Modifier.height(4.dp))
             }
             val fmt = remember { SimpleDateFormat("EEE, MMM d • h:mm a", Locale.getDefault()) }
             sessions.forEach { s ->
+                val isSelected = selected.contains(s.id)
                 Card(
-                    Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp)
+                        .clickable { toggle(s.id) },
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isSelected)
+                            MaterialTheme.colorScheme.surfaceVariant
+                        else
+                            MaterialTheme.colorScheme.surface
+                    ),
                 ) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text(fmt.format(Date(s.startedAt)), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.height(6.dp))
-                        Text("Total ${formatClock(s.totalMillis)}  (planned ${formatClock(s.plannedMillis)}, +${formatClock(s.overtimeMillis)})")
-                        Text("Calmness ${s.calmness}/5")
-                        if (s.people.isNotEmpty()) {
-                            Spacer(Modifier.height(4.dp))
-                            Text("Metta: ${s.people.joinToString(", ")}", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
-                        }
-                        if (s.notes.isNotBlank()) {
-                            Spacer(Modifier.height(4.dp))
-                            Text(s.notes, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = isSelected, onCheckedChange = { toggle(s.id) })
+                        Column(Modifier.padding(end = 16.dp, top = 12.dp, bottom = 12.dp)) {
+                            Text(fmt.format(Date(s.startedAt)), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.height(6.dp))
+                            Text("Total ${formatClock(s.totalMillis)}  (planned ${formatClock(s.plannedMillis)}, +${formatClock(s.overtimeMillis)})")
+                            Text("Calmness ${s.calmness}/5")
+                            if (s.people.isNotEmpty()) {
+                                Spacer(Modifier.height(4.dp))
+                                Text("Metta: ${s.people.joinToString(", ")}", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
+                            }
+                            if (s.notes.isNotBlank()) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(s.notes, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    if (confirmDelete) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete ${selected.size} sit${if (selected.size == 1) "" else "s"}?") },
+            text = { Text("This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDelete(selected.toList())
+                    selected.clear()
+                    confirmDelete = false
+                }) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 

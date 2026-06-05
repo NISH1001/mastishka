@@ -82,6 +82,7 @@ private fun App(vm: MeditationViewModel) {
         Screen.History -> HistoryScreen(
             sessions = sessions,
             onBack = { screen = Screen.Setup },
+            onDelete = vm::deleteSessions,
         )
     }
 }

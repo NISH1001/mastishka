@@ -112,6 +112,11 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun deleteSessions(ids: List<Long>) {
+        if (ids.isEmpty()) return
+        viewModelScope.launch { db.sessionDao().deleteByIds(ids) }
+    }
+
     fun discardSit() {
         selectedPeople.clear()
         TimerService.reset()
