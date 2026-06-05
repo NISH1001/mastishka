@@ -15,6 +15,15 @@ service + wake lock so the gong fires reliably even with the screen off.
 
 `applicationId`: `nishparadox.mastishka` · `minSdk` 26 · `compileSdk` 35
 
+## Screenshots
+
+<p>
+  <img src="docs/screenshots/setup.png" width="200" alt="Setup — duration, gong volume & sound" />
+  <img src="docs/screenshots/sit.png" width="200" alt="Sit — countdown" />
+  <img src="docs/screenshots/metta.png" width="200" alt="Metta Bhavana" />
+  <img src="docs/screenshots/history.png" width="200" alt="History with multi-select delete" />
+</p>
+
 ---
 
 ## Install on your phone (sideload)
