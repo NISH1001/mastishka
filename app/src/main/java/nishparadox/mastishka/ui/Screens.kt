@@ -100,16 +100,22 @@ fun SetupScreen(
     ) {
         Spacer(Modifier.height(40.dp))
         Text("Mastishka", fontSize = 34.sp, fontWeight = FontWeight.Light, color = MaterialTheme.colorScheme.primary)
-        // The sunflower tagline is the theme toggle — tap it to flip light/dark.
-        Text(
-            "Be happy :) 🌻",
-            fontSize = 18.sp,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
-            modifier = Modifier
-                .clip(RoundedCornerShape(50))
-                .clickable { vm.toggleTheme() }
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-        )
+        // Only the sunflower is the theme toggle — tap it to flip light/dark.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Be happy :) ",
+                fontSize = 18.sp,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
+            )
+            Text(
+                "🌻",
+                fontSize = 20.sp,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable { vm.toggleTheme() }
+                    .padding(6.dp),
+            )
+        }
         Spacer(Modifier.height(28.dp))
 
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
