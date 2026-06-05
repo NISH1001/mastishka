@@ -112,11 +112,12 @@ fun SetupScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .systemBarsPadding()
             .verticalScroll(scroll)
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Spacer(Modifier.height(40.dp))
+        Spacer(Modifier.height(8.dp))
         Text("Mastishka", fontSize = 34.sp, fontWeight = FontWeight.Light, color = MaterialTheme.colorScheme.primary)
         // Only the sunflower is the theme toggle — tap it to flip light/dark.
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -186,6 +187,20 @@ fun SetupScreen(
             }
         }
 
+        Spacer(Modifier.height(24.dp))
+
+        Button(
+            onClick = onStart,
+            modifier = Modifier.fillMaxWidth().height(60.dp),
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Icon(Icons.Filled.PlayArrow, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Begin sit", fontSize = 18.sp)
+        }
+
+        Spacer(Modifier.height(22.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f))
         Spacer(Modifier.height(16.dp))
 
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
@@ -280,23 +295,13 @@ fun SetupScreen(
             )
         }
 
-        Spacer(Modifier.height(36.dp))
-
-        Button(
-            onClick = onStart,
-            modifier = Modifier.fillMaxWidth().height(60.dp),
-            shape = RoundedCornerShape(16.dp),
-        ) {
-            Icon(Icons.Filled.PlayArrow, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Begin sit", fontSize = 18.sp)
-        }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
         TextButton(onClick = onHistory) {
             Icon(Icons.Filled.History, contentDescription = null)
             Spacer(Modifier.width(6.dp))
             Text("Past sits")
         }
+        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -354,12 +359,12 @@ fun SitScreen(state: TimerState, onEnd: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 Text(formatClock(state.remainingMillis), fontSize = 72.sp, fontWeight = FontWeight.Light)
             }
-            Spacer(Modifier.height(64.dp))
+            Spacer(Modifier.height(72.dp))
             OutlinedButton(
                 onClick = onEnd,
-                modifier = Modifier.height(56.dp).width(200.dp),
-                shape = RoundedCornerShape(16.dp),
-            ) { Text("End sit", fontSize = 18.sp) }
+                modifier = Modifier.fillMaxWidth(0.72f).height(72.dp),
+                shape = RoundedCornerShape(20.dp),
+            ) { Text("End sit", fontSize = 20.sp) }
         }
     }
 }
