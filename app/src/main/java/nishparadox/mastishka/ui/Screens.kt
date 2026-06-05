@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -64,6 +65,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -96,10 +98,19 @@ fun SetupScreen(
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Spacer(Modifier.height(24.dp))
-        Text("Mastishka", fontSize = 34.sp, fontWeight = FontWeight.Light, color = MaterialTheme.colorScheme.primary)
-        Text("Sit. The gong won't disturb you.", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
         Spacer(Modifier.height(40.dp))
+        Text("Mastishka", fontSize = 34.sp, fontWeight = FontWeight.Light, color = MaterialTheme.colorScheme.primary)
+        // The sunflower tagline is the theme toggle — tap it to flip light/dark.
+        Text(
+            "Be happy :) 🌻",
+            fontSize = 18.sp,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .clickable { vm.toggleTheme() }
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        )
+        Spacer(Modifier.height(28.dp))
 
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {

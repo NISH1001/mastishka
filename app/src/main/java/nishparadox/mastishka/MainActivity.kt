@@ -34,9 +34,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MastishkaTheme {
+            val vm: MeditationViewModel = viewModel()
+            MastishkaTheme(darkTheme = vm.darkTheme) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    App()
+                    App(vm)
                 }
             }
         }
@@ -44,8 +45,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun App() {
-    val vm: MeditationViewModel = viewModel()
+private fun App(vm: MeditationViewModel) {
     val timer by vm.timerState.collectAsState()
     val people by vm.people.collectAsState(initial = emptyList())
     val sessions by vm.sessions.collectAsState(initial = emptyList())

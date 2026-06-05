@@ -3,6 +3,7 @@ package nishparadox.mastishka.data
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -121,6 +122,7 @@ class SettingsStore(private val context: Context) {
     private val keyDurationMin = intPreferencesKey("duration_minutes")
     private val keyVolume = floatPreferencesKey("gong_volume")
     private val keyGongType = stringPreferencesKey("gong_type")
+    private val keyDarkTheme = booleanPreferencesKey("dark_theme")
 
     val durationMinutes: Flow<Int> =
         context.dataStore.data.map { it[keyDurationMin] ?: 60 }
@@ -143,5 +145,13 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setGongType(type: GongType) {
         context.dataStore.edit { it[keyGongType] = type.key }
+    }
+
+    /** Dark theme on/off; defaults to true (dark). */
+    val darkTheme: Flow<Boolean> =
+        context.dataStore.data.map { it[keyDarkTheme] ?: true }
+
+    suspend fun setDarkTheme(enabled: Boolean) {
+        context.dataStore.edit { it[keyDarkTheme] = enabled }
     }
 }

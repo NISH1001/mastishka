@@ -36,6 +36,8 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var gongType by mutableStateOf(GongType.MEDIUM)
         private set
+    var darkTheme by mutableStateOf(true)
+        private set
 
     // People selected for the current sit's metta (reset after saving).
     val selectedPeople = mutableStateListOf<String>()
@@ -46,6 +48,12 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { durationMinutes = settings.durationMinutes.first() }
         viewModelScope.launch { gongVolume = settings.gongVolume.first() }
         viewModelScope.launch { gongType = settings.gongType.first() }
+        viewModelScope.launch { darkTheme = settings.darkTheme.first() }
+    }
+
+    fun toggleTheme() {
+        darkTheme = !darkTheme
+        viewModelScope.launch { settings.setDarkTheme(darkTheme) }
     }
 
     fun updateGongType(type: GongType) {
