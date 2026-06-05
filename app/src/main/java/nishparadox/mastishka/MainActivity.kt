@@ -70,6 +70,7 @@ private fun App(vm: MeditationViewModel) {
 
         Screen.Metta -> MettaScreen(
             state = timer,
+            practice = vm.meditationType.ifBlank { "Meditation" },
             people = people,
             selected = vm.selectedPeople,
             onTogglePerson = vm::togglePerson,

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -369,6 +370,7 @@ fun SitScreen(state: TimerState, onEnd: () -> Unit) {
 @Composable
 fun MettaScreen(
     state: TimerState,
+    practice: String,
     people: List<Person>,
     selected: List<String>,
     onTogglePerson: (String) -> Unit,
@@ -378,7 +380,8 @@ fun MettaScreen(
     onDiscard: () -> Unit,
 ) {
     val context = LocalContext.current
-    var calmness by remember { mutableIntStateOf(3) }
+    val isVipassana = practice == "Vipassana"
+    var calmness by remember { mutableIntStateOf(2) }
     var notes by remember { mutableStateOf("") }
     var newPerson by remember { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<Person?>(null) }
@@ -395,9 +398,14 @@ fun MettaScreen(
     }
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)
+        Modifier.fillMaxSize().systemBarsPadding().verticalScroll(rememberScrollState()).padding(24.dp)
     ) {
-        Text("Metta Bhavana", fontSize = 26.sp, fontWeight = FontWeight.Light, color = MaterialTheme.colorScheme.primary)
+        Text(
+            if (isVipassana) "Metta Bhavana" else "After your sit",
+            fontSize = 26.sp,
+            fontWeight = FontWeight.Light,
+            color = MaterialTheme.colorScheme.primary,
+        )
         Spacer(Modifier.height(16.dp))
 
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
@@ -409,6 +417,7 @@ fun MettaScreen(
             }
         }
 
+        if (isVipassana) {
         Spacer(Modifier.height(24.dp))
         Text("Who did you send metta to?", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
@@ -442,15 +451,22 @@ fun MettaScreen(
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
         )
+        } // end Vipassana-only metta section
 
         Spacer(Modifier.height(24.dp))
-        Text("Calmness / positivity — $calmness / 5", style = MaterialTheme.typography.titleMedium)
-        Slider(
-            value = calmness.toFloat(),
-            onValueChange = { calmness = it.toInt() },
-            valueRange = 1f..5f,
-            steps = 3,
-        )
+        Text("Calmness after the sit", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(1 to "Lower", 2 to "Neutral", 3 to "Higher").forEach { (value, label) ->
+                val mod = Modifier.weight(1f)
+                val pad = PaddingValues(horizontal = 4.dp, vertical = 10.dp)
+                if (calmness == value) {
+                    Button(onClick = { calmness = value }, modifier = mod, contentPadding = pad) { Text(label, maxLines = 1) }
+                } else {
+                    OutlinedButton(onClick = { calmness = value }, modifier = mod, contentPadding = pad) { Text(label, maxLines = 1) }
+                }
+            }
+        }
 
         Spacer(Modifier.height(16.dp))
         Text("Notes & tags", style = MaterialTheme.typography.titleMedium)
@@ -608,7 +624,7 @@ fun HistoryScreen(
                             Text(fmt.format(Date(s.startedAt)), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                             Spacer(Modifier.height(6.dp))
                             Text("Total ${formatClock(s.totalMillis)}  (planned ${formatClock(s.plannedMillis)}, +${formatClock(s.overtimeMillis)})")
-                            Text("Calmness ${s.calmness}/5")
+                            Text("Calmness: ${calmnessLabel(s.calmness)}")
                             if (s.people.isNotEmpty()) {
                                 Spacer(Modifier.height(4.dp))
                                 Text("Metta: ${s.people.joinToString(", ")}", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
@@ -644,6 +660,13 @@ fun HistoryScreen(
 }
 
 // ---------------------------------------------------------------- helpers
+
+private fun calmnessLabel(v: Int): String = when (v) {
+    1 -> "lower"
+    2 -> "neutral"
+    3 -> "higher"
+    else -> "$v/5" // older sits used a 1–5 scale
+}
 
 @Composable
 private fun KeepScreenOn() {
