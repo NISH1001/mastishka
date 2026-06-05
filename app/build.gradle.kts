@@ -7,14 +7,14 @@ plugins {
 
 android {
     namespace = "nishparadox.mastishka"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "nishparadox.mastishka"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.2.0"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -58,6 +58,7 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.health.connect.client)
 
     debugImplementation(libs.androidx.ui.tooling)
 }

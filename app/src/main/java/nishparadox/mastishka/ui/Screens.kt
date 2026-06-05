@@ -61,6 +61,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -76,6 +77,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.health.connect.client.PermissionController
 import nishparadox.mastishka.MeditationViewModel
 import nishparadox.mastishka.data.GongType
 import nishparadox.mastishka.data.Person
@@ -95,6 +97,10 @@ fun SetupScreen(
     onHistory: () -> Unit,
 ) {
     val scroll = rememberScrollState()
+    val hcLauncher = rememberLauncherForActivityResult(
+        PermissionController.createRequestPermissionResultContract()
+    ) { granted -> vm.onHealthPermissionResult(granted) }
+    LaunchedEffect(Unit) { vm.refreshHealthConnect() }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -175,6 +181,24 @@ fun SetupScreen(
                     OutlinedButton(onClick = { vm.stopTestGong() }) { Text("Stop") }
                 }
             }
+        }
+
+        Spacer(Modifier.height(16.dp))
+        when {
+            vm.hcConnected -> Text(
+                "✓ Syncing sits to Health Connect",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            vm.hcAvailable -> OutlinedButton(onClick = { hcLauncher.launch(vm.hcPermissions) }) {
+                Text("Connect to Health Connect")
+            }
+            vm.hcUpdateRequired -> Text(
+                "Update Health Connect to sync your sits",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+            )
+            else -> { /* Health Connect not available on this device */ }
         }
 
         Spacer(Modifier.height(36.dp))

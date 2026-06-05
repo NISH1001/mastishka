@@ -16,7 +16,9 @@ import nishparadox.mastishka.data.GongType
 import nishparadox.mastishka.data.Person
 import nishparadox.mastishka.data.Session
 import nishparadox.mastishka.data.SettingsStore
+import nishparadox.mastishka.health.HealthConnectManager
 import nishparadox.mastishka.service.TimerService
+import androidx.health.connect.client.HealthConnectClient
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -24,6 +26,7 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
 
     private val db = AppDatabase.get(app)
     private val settings = SettingsStore(app)
+    private val health = HealthConnectManager(app)
 
     val people = db.personDao().observeAll()
     val sessions = db.sessionDao().observeAll()
@@ -42,6 +45,16 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
     // People selected for the current sit's metta (reset after saving).
     val selectedPeople = mutableStateListOf<String>()
 
+    // Health Connect
+    var hcStatus by mutableIntStateOf(HealthConnectClient.SDK_UNAVAILABLE)
+        private set
+    var hcConnected by mutableStateOf(false)
+        private set
+    val hcPermissions: Set<String> get() = health.permissions
+    val hcAvailable: Boolean get() = hcStatus == HealthConnectClient.SDK_AVAILABLE
+    val hcUpdateRequired: Boolean
+        get() = hcStatus == HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED
+
     private var testPlayer: MediaPlayer? = null
 
     init {
@@ -49,6 +62,16 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { gongVolume = settings.gongVolume.first() }
         viewModelScope.launch { gongType = settings.gongType.first() }
         viewModelScope.launch { darkTheme = settings.darkTheme.first() }
+        refreshHealthConnect()
+    }
+
+    fun refreshHealthConnect() {
+        hcStatus = health.status()
+        viewModelScope.launch { hcConnected = health.hasAllPermissions() }
+    }
+
+    fun onHealthPermissionResult(granted: Set<String>) {
+        hcConnected = granted.containsAll(health.permissions)
     }
 
     fun toggleTheme() {
@@ -106,6 +129,14 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         )
         viewModelScope.launch {
             db.sessionDao().insert(session)
+            if (hcConnected) {
+                health.writeMeditation(
+                    startMillis = session.startedAt,
+                    endMillis = session.startedAt + session.totalMillis,
+                    title = "Vipassana sit",
+                    notes = session.notes,
+                )
+            }
             selectedPeople.clear()
             TimerService.reset()
             onDone()
