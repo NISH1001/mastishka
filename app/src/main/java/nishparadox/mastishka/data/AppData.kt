@@ -125,7 +125,7 @@ class SettingsStore(private val context: Context) {
     private val keyDarkTheme = booleanPreferencesKey("dark_theme")
 
     val durationMinutes: Flow<Int> =
-        context.dataStore.data.map { it[keyDurationMin] ?: 60 }
+        context.dataStore.data.map { it[keyDurationMin] ?: 5 }
 
     /** Gong volume scalar, 0f..1f. */
     val gongVolume: Flow<Float> =

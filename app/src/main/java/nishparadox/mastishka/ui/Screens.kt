@@ -193,12 +193,12 @@ private fun DurationPicker(totalMinutes: Int, onChange: (Int) -> Unit) {
     val minutes = totalMinutes % 60
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
         Stepper(label = "hr", value = hours, onDelta = { onChange((totalMinutes + it * 60).coerceAtLeast(1)) })
-        Stepper(label = "min", value = minutes, onDelta = { onChange((totalMinutes + it * 5).coerceAtLeast(1)) }, step = 5)
+        Stepper(label = "min", value = minutes, onDelta = { onChange((totalMinutes + it).coerceAtLeast(1)) })
     }
 }
 
 @Composable
-private fun Stepper(label: String, value: Int, onDelta: (Int) -> Unit, step: Int = 1) {
+private fun Stepper(label: String, value: Int, onDelta: (Int) -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         IconButton(onClick = { onDelta(+1) }) { Icon(Icons.Filled.Add, contentDescription = "increase $label") }
         Text("%02d".format(value), fontSize = 28.sp, fontWeight = FontWeight.Medium)

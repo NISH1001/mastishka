@@ -30,7 +30,7 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
     val timerState = TimerService.state
 
     // Editable, persisted settings mirrored into Compose state.
-    var durationMinutes by mutableIntStateOf(60)
+    var durationMinutes by mutableIntStateOf(5)
         private set
     var gongVolume by mutableFloatStateOf(0.7f)
         private set
