@@ -57,8 +57,14 @@ data class Session(
     val people: List<String>,     // names you sent metta to this sit
     val notes: String,            // free-form notes / tags (often dictated)
     val type: String = "Meditation", // practice type (Vipassana, Anapana, …); HC session title
+    // Heart rate during the sit, pulled from Health Connect (0 = none yet).
+    val hrAvg: Int = 0,
+    val hrMin: Int = 0,
+    val hrMax: Int = 0,
+    val hrSeries: String = "", // comma-separated downsampled bpm for a sparkline
 ) {
     val overtimeMillis: Long get() = (totalMillis - plannedMillis).coerceAtLeast(0)
+    val hasHeartRate: Boolean get() = hrAvg > 0
 }
 
 // ---------- Converters ----------
@@ -96,11 +102,14 @@ interface SessionDao {
 
     @Query("DELETE FROM sessions WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<Long>)
+
+    @Query("UPDATE sessions SET hrAvg = :avg, hrMin = :min, hrMax = :max, hrSeries = :series WHERE id = :id")
+    suspend fun updateHeartRate(id: Long, avg: Int, min: Int, max: Int, series: String)
 }
 
 // ---------- Database ----------
 
-@Database(entities = [Person::class, Session::class], version = 2, exportSchema = false)
+@Database(entities = [Person::class, Session::class], version = 3, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun personDao(): PersonDao
@@ -116,13 +125,23 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // v3 adds heart-rate summary columns pulled from Health Connect.
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sessions ADD COLUMN hrAvg INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN hrMin INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN hrMax INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN hrSeries TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "mastishka.db"
-                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
             }
     }
 }
@@ -137,6 +156,7 @@ class SettingsStore(private val context: Context) {
     private val keyGongType = stringPreferencesKey("gong_type")
     private val keyDarkTheme = booleanPreferencesKey("dark_theme")
     private val keyMeditationType = stringPreferencesKey("meditation_type")
+    private val keyMonitorHr = booleanPreferencesKey("monitor_heart_rate")
 
     val durationMinutes: Flow<Int> =
         context.dataStore.data.map { it[keyDurationMin] ?: 5 }
@@ -175,5 +195,13 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setMeditationType(type: String) {
         context.dataStore.edit { it[keyMeditationType] = type }
+    }
+
+    /** Whether to capture heart rate for the sit (needs Health Connect + permission). */
+    val monitorHeartRate: Flow<Boolean> =
+        context.dataStore.data.map { it[keyMonitorHr] ?: false }
+
+    suspend fun setMonitorHeartRate(enabled: Boolean) {
+        context.dataStore.edit { it[keyMonitorHr] = enabled }
     }
 }

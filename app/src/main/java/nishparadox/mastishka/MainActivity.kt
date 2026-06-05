@@ -71,6 +71,10 @@ private fun App(vm: MeditationViewModel) {
         Screen.Metta -> MettaScreen(
             state = timer,
             practice = vm.meditationType.ifBlank { "Meditation" },
+            monitorHeartRate = vm.monitorHeartRate && vm.hcConnected,
+            hr = vm.lastSitHr,
+            hrLoading = vm.hrLoading,
+            onLoadHeartRate = vm::loadHeartRateForCurrentSit,
             people = people,
             selected = vm.selectedPeople,
             onTogglePerson = vm::togglePerson,
@@ -84,6 +88,8 @@ private fun App(vm: MeditationViewModel) {
             sessions = sessions,
             onBack = { screen = Screen.Setup },
             onDelete = vm::deleteSessions,
+            heartRateEnabled = vm.hcConnected && vm.monitorHeartRate,
+            onRefreshHeartRate = { vm.backfillHeartRate() },
         )
     }
 }

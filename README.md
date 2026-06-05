@@ -14,6 +14,10 @@ A barebones Android app for Vipassana meditation sits.
 - **Health Connect sync** — saved sits are written as mindfulness/meditation sessions to
   Health Connect (so they appear in Google Health and connected apps). Connect once, then it
   syncs automatically; a manual sync also pushes past sits.
+- **Heart rate** — if you wear a band that records heart rate to Health Connect (e.g. Fitbit),
+  enable "Monitor heart rate" and each sit gets a **BPM graph** with avg/min/max — pulled by
+  time-correlation from Health Connect for the sit's window. Opening History auto-fills any
+  sit still missing it.
 - **History** of every sit (total/overtime, calmness, practice, people, notes), on-device.
 
 Native Kotlin + Jetpack Compose, Room (history), DataStore (settings), Health Connect, and a
@@ -28,6 +32,7 @@ foreground service + wake lock so the gong fires reliably even with the screen o
   <img src="docs/screenshots/sit.png" width="200" alt="Sit — countdown" />
   <img src="docs/screenshots/metta.png" width="200" alt="Metta Bhavana" />
   <img src="docs/screenshots/history.png" width="200" alt="History with multi-select delete" />
+  <img src="docs/screenshots/heartrate.png" width="200" alt="Heart-rate graph per sit (from Health Connect)" />
 </p>
 
 ---

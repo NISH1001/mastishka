@@ -10,6 +10,7 @@
     <!-- Health Connect: write meditation sessions (read to verify our own writes). -->
     <uses-permission android:name="android.permission.health.WRITE_MINDFULNESS" />
     <uses-permission android:name="android.permission.health.READ_MINDFULNESS" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
 
     <!-- Allow the app to discover the Health Connect provider. -->
     <queries>

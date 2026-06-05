@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -73,6 +74,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -80,6 +85,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.health.connect.client.PermissionController
+import nishparadox.mastishka.HrSummary
 import nishparadox.mastishka.MeditationViewModel
 import nishparadox.mastishka.data.GongType
 import nishparadox.mastishka.data.Person
@@ -295,6 +301,30 @@ fun SetupScreen(
             )
         }
 
+        Spacer(Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(
+                checked = vm.monitorHeartRate && vm.hcConnected,
+                onCheckedChange = { vm.updateMonitorHeartRate(it) },
+                enabled = vm.hcConnected,
+            )
+            Spacer(Modifier.width(4.dp))
+            Column {
+                Text(
+                    "Monitor heart rate",
+                    color = if (vm.hcConnected) MaterialTheme.colorScheme.onBackground
+                    else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
+                )
+                if (!vm.hcConnected) {
+                    Text(
+                        "Connect to Health Connect to enable",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
+                    )
+                }
+            }
+        }
+
         Spacer(Modifier.height(16.dp))
         TextButton(onClick = onHistory) {
             Icon(Icons.Filled.History, contentDescription = null)
@@ -376,6 +406,10 @@ fun SitScreen(state: TimerState, onEnd: () -> Unit) {
 fun MettaScreen(
     state: TimerState,
     practice: String,
+    monitorHeartRate: Boolean,
+    hr: HrSummary?,
+    hrLoading: Boolean,
+    onLoadHeartRate: () -> Unit,
     people: List<Person>,
     selected: List<String>,
     onTogglePerson: (String) -> Unit,
@@ -419,6 +453,40 @@ fun MettaScreen(
                 TimeRow("Overtime", "+${formatClock(state.overtimeMillis)}")
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 TimeRow("Total sat", formatClock(state.elapsedMillis), emphasize = true)
+            }
+        }
+
+        if (monitorHeartRate) {
+            LaunchedEffect(Unit) { onLoadHeartRate() }
+            Spacer(Modifier.height(16.dp))
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Heart rate", style = MaterialTheme.typography.titleMedium)
+                        IconButton(onClick = onLoadHeartRate) {
+                            Icon(Icons.Filled.Sync, contentDescription = "Refresh heart rate", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    when {
+                        hr != null -> {
+                            Text("avg ${hr.avg} · ${hr.min}–${hr.max} bpm", color = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.height(8.dp))
+                            HeartRateChart(hr.series, Modifier.height(120.dp))
+                        }
+                        hrLoading -> Text(
+                            "Reading heart rate…",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        )
+                        else -> Text(
+                            "No heart-rate data yet — your band may still be syncing. Tap ↻ to refresh.",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        )
+                    }
+                }
             }
         }
 
@@ -557,10 +625,16 @@ fun HistoryScreen(
     sessions: List<Session>,
     onBack: () -> Unit,
     onDelete: (List<Long>) -> Unit,
+    heartRateEnabled: Boolean,
+    onRefreshHeartRate: () -> Unit,
 ) {
+    val context = LocalContext.current
     val selected = remember { mutableStateListOf<Long>() }
     var confirmDelete by remember { mutableStateOf(false) }
     val selecting = selected.isNotEmpty()
+
+    // Auto-pull heart rate for any sit still missing it whenever History opens.
+    LaunchedEffect(Unit) { if (heartRateEnabled) onRefreshHeartRate() }
 
     fun toggle(id: Long) {
         if (selected.contains(id)) selected.remove(id) else selected.add(id)
@@ -585,6 +659,13 @@ fun HistoryScreen(
                     if (selecting) {
                         IconButton(onClick = { confirmDelete = true }) {
                             Icon(Icons.Filled.Delete, contentDescription = "Delete selected")
+                        }
+                    } else if (heartRateEnabled) {
+                        IconButton(onClick = {
+                            onRefreshHeartRate()
+                            Toast.makeText(context, "Refreshing heart rate…", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(Icons.Filled.Sync, contentDescription = "Refresh heart rate")
                         }
                     }
                 },
@@ -630,6 +711,18 @@ fun HistoryScreen(
                             Spacer(Modifier.height(6.dp))
                             Text("Total ${formatClock(s.totalMillis)}  (planned ${formatClock(s.plannedMillis)}, +${formatClock(s.overtimeMillis)})")
                             Text("Calmness: ${calmnessLabel(s.calmness)}")
+                            if (s.hasHeartRate) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "❤ ${s.hrAvg} bpm  (${s.hrMin}–${s.hrMax})",
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                val pts = s.hrSeries.split(",").mapNotNull { it.toIntOrNull() }
+                                if (pts.size >= 2) {
+                                    Spacer(Modifier.height(4.dp))
+                                    HeartRateChart(pts, Modifier.height(40.dp))
+                                }
+                            }
                             if (s.people.isNotEmpty()) {
                                 Spacer(Modifier.height(4.dp))
                                 Text("Metta: ${s.people.joinToString(", ")}", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
@@ -671,6 +764,25 @@ private fun calmnessLabel(v: Int): String = when (v) {
     2 -> "neutral"
     3 -> "higher"
     else -> "$v/5" // older sits used a 1–5 scale
+}
+
+@Composable
+private fun HeartRateChart(series: List<Int>, modifier: Modifier = Modifier) {
+    if (series.size < 2) return
+    val color = MaterialTheme.colorScheme.primary
+    val mn = series.min()
+    val mx = series.max()
+    val range = (mx - mn).coerceAtLeast(1)
+    Canvas(modifier.fillMaxWidth()) {
+        val stepX = size.width / (series.size - 1)
+        val path = Path()
+        series.forEachIndexed { i, v ->
+            val x = i * stepX
+            val y = size.height - ((v - mn).toFloat() / range) * size.height
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        drawPath(path, color, style = Stroke(width = 4f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
 }
 
 @Composable

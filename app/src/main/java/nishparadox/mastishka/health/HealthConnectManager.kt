@@ -4,9 +4,12 @@ import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.feature.ExperimentalMindfulnessSessionApi
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.MindfulnessSessionRecord
 import androidx.health.connect.client.records.metadata.Device
 import androidx.health.connect.client.records.metadata.Metadata
+import androidx.health.connect.client.request.ReadRecordsRequest
+import androidx.health.connect.client.time.TimeRangeFilter
 import java.time.Instant
 import java.time.ZoneId
 
@@ -17,10 +20,11 @@ import java.time.ZoneId
 @OptIn(ExperimentalMindfulnessSessionApi::class)
 class HealthConnectManager(private val context: Context) {
 
-    /** Permissions we need: write our sessions (and read to confirm our own writes). */
+    /** Permissions we need: write our sessions, read them back, and read heart rate. */
     val permissions: Set<String> = setOf(
         HealthPermission.getWritePermission(MindfulnessSessionRecord::class),
         HealthPermission.getReadPermission(MindfulnessSessionRecord::class),
+        HealthPermission.getReadPermission(HeartRateRecord::class),
     )
 
     private val client: HealthConnectClient? by lazy {
@@ -70,5 +74,21 @@ class HealthConnectManager(private val context: Context) {
             c.insertRecords(listOf(record))
             true
         }.getOrDefault(false)
+    }
+
+    /** Read all heart-rate bpm samples (sorted by time) recorded within a window. */
+    suspend fun readHeartRate(startMillis: Long, endMillis: Long): List<Long> {
+        val c = client ?: return emptyList()
+        return runCatching {
+            c.readRecords(
+                ReadRecordsRequest(
+                    recordType = HeartRateRecord::class,
+                    timeRangeFilter = TimeRangeFilter.between(
+                        Instant.ofEpochMilli(startMillis),
+                        Instant.ofEpochMilli(endMillis),
+                    ),
+                )
+            ).records.flatMap { it.samples }.sortedBy { it.time }.map { it.beatsPerMinute }
+        }.getOrDefault(emptyList())
     }
 }

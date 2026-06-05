@@ -44,6 +44,9 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
     // Empty = no specific practice chosen (falls back to "Meditation" when saved).
     var meditationType by mutableStateOf("")
         private set
+    // Capture heart rate for the sit (only meaningful when Health Connect is connected).
+    var monitorHeartRate by mutableStateOf(false)
+        private set
 
     // People selected for the current sit's metta (reset after saving).
     val selectedPeople = mutableStateListOf<String>()
@@ -58,6 +61,12 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
     val hcUpdateRequired: Boolean
         get() = hcStatus == HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED
 
+    // Heart-rate result for the just-finished sit, shown on the post-sit screen.
+    var lastSitHr by mutableStateOf<HrSummary?>(null)
+        private set
+    var hrLoading by mutableStateOf(false)
+        private set
+
     private var testPlayer: MediaPlayer? = null
 
     init {
@@ -66,7 +75,26 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { gongType = settings.gongType.first() }
         viewModelScope.launch { darkTheme = settings.darkTheme.first() }
         viewModelScope.launch { meditationType = settings.meditationType.first() }
+        viewModelScope.launch { monitorHeartRate = settings.monitorHeartRate.first() }
         refreshHealthConnect()
+    }
+
+    fun updateMonitorHeartRate(enabled: Boolean) {
+        monitorHeartRate = enabled
+        viewModelScope.launch { settings.setMonitorHeartRate(enabled) }
+    }
+
+    /** Read heart rate for the just-finished sit (called from the post-sit screen). */
+    fun loadHeartRateForCurrentSit() {
+        if (!hcConnected || !monitorHeartRate) return
+        val s = timerState.value
+        if (s.elapsedMillis <= 0L) return
+        hrLoading = true
+        viewModelScope.launch {
+            val bpms = health.readHeartRate(s.startedAtEpoch, s.startedAtEpoch + s.elapsedMillis)
+            lastSitHr = summarize(bpms)
+            hrLoading = false
+        }
     }
 
     /** Tap to select; tap the selected one again to clear (back to generic). */
@@ -106,6 +134,7 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
 
     fun startSit() {
         selectedPeople.clear()
+        lastSitHr = null
         TimerService.start(getApplication(), durationMinutes * 60_000L, gongVolume, gongType.rawResId)
     }
 
@@ -129,6 +158,7 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveSession(calmness: Int, notes: String, onDone: () -> Unit) {
         val s = timerState.value
+        val hr = lastSitHr
         val session = Session(
             startedAt = s.startedAtEpoch,
             plannedMillis = s.plannedMillis,
@@ -137,6 +167,10 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
             people = selectedPeople.toList(),
             notes = notes.trim(),
             type = meditationType.ifBlank { "Meditation" },
+            hrAvg = hr?.avg ?: 0,
+            hrMin = hr?.min ?: 0,
+            hrMax = hr?.max ?: 0,
+            hrSeries = hr?.seriesCsv ?: "",
         )
         viewModelScope.launch {
             val id = db.sessionDao().insert(session)
@@ -148,8 +182,14 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
                     notes = session.notes,
                     clientRecordId = "mastishka-$id",
                 )
+                // If HR wasn't captured on the post-sit screen yet, try once more now.
+                if (hr == null && monitorHeartRate) {
+                    summarize(health.readHeartRate(session.startedAt, session.startedAt + session.totalMillis))
+                        ?.let { db.sessionDao().updateHeartRate(id, it.avg, it.min, it.max, it.seriesCsv) }
+                }
             }
             selectedPeople.clear()
+            lastSitHr = null
             TimerService.reset()
             onDone()
         }
@@ -171,8 +211,29 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
                     clientRecordId = "mastishka-${s.id}",
                 )
                 if (ok) count++
+                // Also backfill heart rate for each sit from Health Connect.
+                summarize(health.readHeartRate(s.startedAt, s.startedAt + s.totalMillis))
+                    ?.let { db.sessionDao().updateHeartRate(s.id, it.avg, it.min, it.max, it.seriesCsv) }
             }
             onResult(count)
+        }
+    }
+
+    /** Pull heart rate from Health Connect for any sit still missing it (auto on History open).
+     *  No-op unless Health Connect is connected and "Monitor heart rate" is on. */
+    fun backfillHeartRate(onDone: (Int) -> Unit = {}) {
+        if (!hcConnected || !monitorHeartRate) { onDone(0); return }
+        viewModelScope.launch {
+            val all = sessions.first()
+            var filled = 0
+            for (s in all) {
+                if (s.hrAvg > 0) continue
+                summarize(health.readHeartRate(s.startedAt, s.startedAt + s.totalMillis))?.let {
+                    db.sessionDao().updateHeartRate(s.id, it.avg, it.min, it.max, it.seriesCsv)
+                    filled++
+                }
+            }
+            onDone(filled)
         }
     }
 
@@ -183,7 +244,21 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
 
     fun discardSit() {
         selectedPeople.clear()
+        lastSitHr = null
         TimerService.reset()
+    }
+
+    /** Reduce raw bpm samples to avg/min/max + a ~60-point series for charting. */
+    private fun summarize(bpms: List<Long>): HrSummary? {
+        if (bpms.isEmpty()) return null
+        val ints = bpms.map { it.toInt() }
+        val n = 60
+        val series = if (ints.size <= n) ints else (0 until n).map { i ->
+            val from = i * ints.size / n
+            val to = ((i + 1) * ints.size / n).coerceAtMost(ints.size)
+            if (to > from) ints.subList(from, to).average().toInt() else ints[from.coerceIn(0, ints.size - 1)]
+        }
+        return HrSummary(avg = ints.average().toInt(), min = ints.min(), max = ints.max(), series = series)
     }
 
     /** Play the gong once at the current volume so the user can set the level before sitting. */
@@ -215,4 +290,9 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         stopTestGong()
         super.onCleared()
     }
+}
+
+/** Heart-rate summary for a sit: avg/min/max bpm + a downsampled series for charting. */
+data class HrSummary(val avg: Int, val min: Int, val max: Int, val series: List<Int>) {
+    val seriesCsv: String get() = series.joinToString(",")
 }
