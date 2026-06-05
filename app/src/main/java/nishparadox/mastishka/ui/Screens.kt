@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -106,9 +107,16 @@ fun SetupScreen(
                 Spacer(Modifier.height(12.dp))
                 DurationPicker(vm.durationMinutes) { vm.setDuration(it) }
                 Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(30, 45, 60, 90).forEach { preset ->
-                        OutlinedButton(onClick = { vm.setDuration(preset) }) { Text("${preset}m") }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf(10 to "10m", 30 to "30m", 45 to "45m", 60 to "1h").forEach { (minutes, label) ->
+                        OutlinedButton(
+                            onClick = { vm.setDuration(minutes) },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                        ) { Text(label, maxLines = 1) }
                     }
                 }
             }
