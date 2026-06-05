@@ -19,10 +19,10 @@ service + wake lock so the gong fires reliably even with the screen off.
 
 ## Install on your phone (sideload)
 
-The ready-to-install debug APK is **`Mastishka.apk`** in this folder.
+The ready-to-install debug APK is **`mastishka.apk`** in this folder.
 
 ### Option A — drag-and-drop (no cable setup)
-1. Copy `Mastishka.apk` to your phone (AirDrop to a Mac won't work for Android; use Google
+1. Copy `mastishka.apk` to your phone (AirDrop to a Mac won't work for Android; use Google
    Drive, email it to yourself, or a USB file transfer).
 2. On the phone, tap the file. Android will ask to allow installing from this source — allow it.
 3. Open **Mastishka**.
@@ -34,7 +34,7 @@ The ready-to-install debug APK is **`Mastishka.apk`** in this folder.
 3. From this folder:
    ```sh
    export ANDROID_HOME="$HOME/Library/Android/sdk"
-   "$ANDROID_HOME/platform-tools/adb" install -r Mastishka.apk
+   "$ANDROID_HOME/platform-tools/adb" install -r mastishka.apk
    ```
 
 > First gong: grant the notification permission when prompted (it powers the ongoing-timer

@@ -1,6 +1,5 @@
 package nishparadox.mastishka.ui
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -32,7 +31,8 @@ private val LightColors = lightColorScheme(
 
 @Composable
 fun MastishkaTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    // Mastishka is always dark — a calm, low-glare palette for meditation.
+    darkTheme: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     MaterialTheme(
