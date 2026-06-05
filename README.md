@@ -6,14 +6,20 @@ A barebones Android app for Vipassana meditation sits.
   timer keeps counting *overtime* so you know exactly how much longer you sat.
 - **Gong volume** and **gong sound** (Small / Medium / Large — default Medium) are set before
   the sit, with a **Test gong** button.
-- **Metta Bhavana** at the end — pick people you sent loving-kindness to (reusable list),
-  rate calmness/positivity, and add notes/tags (with **voice-to-text**).
-- **History** of every sit (total/overtime, calmness, people, notes), stored on-device.
+- **Practice type** (optional) — tag a sit as Vipassana / Anapana / Focused Breathing /
+  Concentration (defaults to "Meditation"); it becomes the session title.
+- **Post-sit reflection** — a 3-way calmness check (Lower / Neutral / Higher) and notes
+  (with **voice-to-text**) for any sit; the **Metta Bhavana** people section shows only for
+  Vipassana sits.
+- **Health Connect sync** — saved sits are written as mindfulness/meditation sessions to
+  Health Connect (so they appear in Google Health and connected apps). Connect once, then it
+  syncs automatically; a manual sync also pushes past sits.
+- **History** of every sit (total/overtime, calmness, practice, people, notes), on-device.
 
-Native Kotlin + Jetpack Compose, Room (history), DataStore (settings), and a foreground
-service + wake lock so the gong fires reliably even with the screen off.
+Native Kotlin + Jetpack Compose, Room (history), DataStore (settings), Health Connect, and a
+foreground service + wake lock so the gong fires reliably even with the screen off.
 
-`applicationId`: `nishparadox.mastishka` · `minSdk` 26 · `compileSdk` 35
+`applicationId`: `nishparadox.mastishka` · `minSdk` 26 · `compileSdk` 36
 
 ## Screenshots
 
