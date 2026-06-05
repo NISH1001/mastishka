@@ -45,6 +45,7 @@ class HealthConnectManager(private val context: Context) {
         endMillis: Long,
         title: String,
         notes: String,
+        clientRecordId: String,
     ): Boolean {
         val c = client ?: return false
         if (!hasAllPermissions()) return false
@@ -60,7 +61,11 @@ class HealthConnectManager(private val context: Context) {
                 mindfulnessSessionType = MindfulnessSessionRecord.MINDFULNESS_SESSION_TYPE_MEDITATION,
                 title = title,
                 notes = notes.ifBlank { null },
-                metadata = Metadata.manualEntry(device = Device(type = Device.TYPE_PHONE)),
+                // Stable clientRecordId → re-syncing updates the same record instead of duplicating.
+                metadata = Metadata.manualEntry(
+                    device = Device(type = Device.TYPE_PHONE),
+                    clientRecordId = clientRecordId,
+                ),
             )
             c.insertRecords(listOf(record))
             true

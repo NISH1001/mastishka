@@ -20,6 +20,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import nishparadox.mastishka.R
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -51,9 +53,10 @@ data class Session(
     val startedAt: Long,          // epoch millis when the sit began
     val plannedMillis: Long,      // the duration you set
     val totalMillis: Long,        // actual time sat, including overtime
-    val calmness: Int,            // 0..10 positivity / calmness level
+    val calmness: Int,            // 1..5 positivity / calmness level
     val people: List<String>,     // names you sent metta to this sit
     val notes: String,            // free-form notes / tags (often dictated)
+    val type: String = "Meditation", // practice type (Vipassana, Anapana, …); HC session title
 ) {
     val overtimeMillis: Long get() = (totalMillis - plannedMillis).coerceAtLeast(0)
 }
@@ -97,7 +100,7 @@ interface SessionDao {
 
 // ---------- Database ----------
 
-@Database(entities = [Person::class, Session::class], version = 1, exportSchema = false)
+@Database(entities = [Person::class, Session::class], version = 2, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun personDao(): PersonDao
@@ -106,13 +109,20 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         @Volatile private var instance: AppDatabase? = null
 
+        // v2 adds Session.type; existing rows default to "Meditation".
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sessions ADD COLUMN type TEXT NOT NULL DEFAULT 'Meditation'")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "mastishka.db"
-                ).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
             }
     }
 }
@@ -126,6 +136,7 @@ class SettingsStore(private val context: Context) {
     private val keyVolume = floatPreferencesKey("gong_volume")
     private val keyGongType = stringPreferencesKey("gong_type")
     private val keyDarkTheme = booleanPreferencesKey("dark_theme")
+    private val keyMeditationType = stringPreferencesKey("meditation_type")
 
     val durationMinutes: Flow<Int> =
         context.dataStore.data.map { it[keyDurationMin] ?: 5 }
@@ -156,5 +167,13 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setDarkTheme(enabled: Boolean) {
         context.dataStore.edit { it[keyDarkTheme] = enabled }
+    }
+
+    /** Last-used practice type; empty string means no specific practice chosen. */
+    val meditationType: Flow<String> =
+        context.dataStore.data.map { it[keyMeditationType] ?: "" }
+
+    suspend fun setMeditationType(type: String) {
+        context.dataStore.edit { it[keyMeditationType] = type }
     }
 }

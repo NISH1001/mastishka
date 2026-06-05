@@ -41,6 +41,9 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var darkTheme by mutableStateOf(true)
         private set
+    // Empty = no specific practice chosen (falls back to "Meditation" when saved).
+    var meditationType by mutableStateOf("")
+        private set
 
     // People selected for the current sit's metta (reset after saving).
     val selectedPeople = mutableStateListOf<String>()
@@ -62,7 +65,14 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { gongVolume = settings.gongVolume.first() }
         viewModelScope.launch { gongType = settings.gongType.first() }
         viewModelScope.launch { darkTheme = settings.darkTheme.first() }
+        viewModelScope.launch { meditationType = settings.meditationType.first() }
         refreshHealthConnect()
+    }
+
+    /** Tap to select; tap the selected one again to clear (back to generic). */
+    fun updateMeditationType(type: String) {
+        meditationType = if (meditationType == type) "" else type
+        viewModelScope.launch { settings.setMeditationType(meditationType) }
     }
 
     fun refreshHealthConnect() {
@@ -126,20 +136,43 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
             calmness = calmness,
             people = selectedPeople.toList(),
             notes = notes.trim(),
+            type = meditationType.ifBlank { "Meditation" },
         )
         viewModelScope.launch {
-            db.sessionDao().insert(session)
+            val id = db.sessionDao().insert(session)
             if (hcConnected) {
                 health.writeMeditation(
                     startMillis = session.startedAt,
                     endMillis = session.startedAt + session.totalMillis,
-                    title = "Vipassana sit",
+                    title = session.type,
                     notes = session.notes,
+                    clientRecordId = "mastishka-$id",
                 )
             }
             selectedPeople.clear()
             TimerService.reset()
             onDone()
+        }
+    }
+
+    /** Push every saved sit to Health Connect. Dedup-safe via stable clientRecordId.
+     *  Calls back with the number written, or -1 if not connected. */
+    fun syncAllSessions(onResult: (Int) -> Unit) {
+        if (!hcConnected) { onResult(-1); return }
+        viewModelScope.launch {
+            val all = sessions.first()
+            var count = 0
+            for (s in all) {
+                val ok = health.writeMeditation(
+                    startMillis = s.startedAt,
+                    endMillis = s.startedAt + s.totalMillis,
+                    title = s.type,
+                    notes = s.notes,
+                    clientRecordId = "mastishka-${s.id}",
+                )
+                if (ok) count++
+            }
+            onResult(count)
         }
     }
 

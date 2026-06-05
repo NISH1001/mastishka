@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -90,6 +91,7 @@ import java.util.Locale
 
 // ---------------------------------------------------------------- Setup
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SetupScreen(
     vm: MeditationViewModel,
@@ -97,9 +99,14 @@ fun SetupScreen(
     onHistory: () -> Unit,
 ) {
     val scroll = rememberScrollState()
+    val context = LocalContext.current
     val hcLauncher = rememberLauncherForActivityResult(
         PermissionController.createRequestPermissionResultContract()
     ) { granted -> vm.onHealthPermissionResult(granted) }
+    // Returning from Health Connect settings → re-check whether permission is now granted.
+    val hcSettingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { vm.refreshHealthConnect() }
     LaunchedEffect(Unit) { vm.refreshHealthConnect() }
     Column(
         modifier = Modifier
@@ -127,6 +134,35 @@ fun SetupScreen(
             )
         }
         Spacer(Modifier.height(28.dp))
+
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.padding(20.dp)) {
+                Text("Practice (optional)", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(10.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf("Vipassana", "Anapana", "Focused Breathing", "Concentration").forEach { t ->
+                        SelectableChip(
+                            label = t,
+                            selected = vm.meditationType == t,
+                            onTap = { vm.updateMeditationType(t) },
+                            onLongPress = {},
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    if (vm.meditationType.isBlank()) "This sit will be saved as “Meditation”"
+                    else "This sit will be saved as “${vm.meditationType}”",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
 
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -185,20 +221,62 @@ fun SetupScreen(
 
         Spacer(Modifier.height(16.dp))
         when {
-            vm.hcConnected -> Text(
-                "✓ Syncing sits to Health Connect",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            vm.hcAvailable -> OutlinedButton(onClick = { hcLauncher.launch(vm.hcPermissions) }) {
-                Text("Connect to Health Connect")
+            vm.hcConnected -> Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "✓ Syncing to Health Connect",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                IconButton(onClick = {
+                    vm.syncAllSessions { count ->
+                        val msg = when {
+                            count < 0 -> "Connect to Health Connect first"
+                            else -> "Synced $count sit${if (count == 1) "" else "s"} to Health Connect"
+                        }
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    }
+                }) {
+                    Icon(
+                        Icons.Filled.Sync,
+                        contentDescription = "Sync past sits to Health Connect",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+            vm.hcAvailable -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                OutlinedButton(onClick = {
+                    runCatching { hcLauncher.launch(vm.hcPermissions) }
+                        .onFailure {
+                            Toast.makeText(
+                                context,
+                                "Couldn't open Health Connect: ${it.javaClass.simpleName}: ${it.message}",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                }) {
+                    Text("Connect to Health Connect")
+                }
+                TextButton(onClick = {
+                    val perApp = Intent("android.health.connect.action.MANAGE_HEALTH_PERMISSIONS")
+                        .putExtra(Intent.EXTRA_PACKAGE_NAME, "nishparadox.mastishka")
+                    val home = Intent("androidx.health.connect.action.HEALTH_CONNECT_SETTINGS")
+                    runCatching { hcSettingsLauncher.launch(perApp) }
+                        .recoverCatching { hcSettingsLauncher.launch(home) }
+                        .onFailure {
+                            Toast.makeText(context, "Couldn't open Health Connect settings", Toast.LENGTH_LONG).show()
+                        }
+                }) { Text("Or grant in Health Connect settings") }
             }
             vm.hcUpdateRequired -> Text(
                 "Update Health Connect to sync your sits",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
             )
-            else -> { /* Health Connect not available on this device */ }
+            else -> Text(
+                "Health Connect not available on this device",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+            )
         }
 
         Spacer(Modifier.height(36.dp))
@@ -526,7 +604,8 @@ fun HistoryScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = isSelected, onCheckedChange = { toggle(s.id) })
                         Column(Modifier.padding(end = 16.dp, top = 12.dp, bottom = 12.dp)) {
-                            Text(fmt.format(Date(s.startedAt)), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                            Text(s.type, style = MaterialTheme.typography.titleMedium)
+                            Text(fmt.format(Date(s.startedAt)), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                             Spacer(Modifier.height(6.dp))
                             Text("Total ${formatClock(s.totalMillis)}  (planned ${formatClock(s.plannedMillis)}, +${formatClock(s.overtimeMillis)})")
                             Text("Calmness ${s.calmness}/5")
