@@ -43,6 +43,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -88,6 +90,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.health.connect.client.PermissionController
+import nishparadox.mastishka.BuildConfig
 import nishparadox.mastishka.HrSummary
 import nishparadox.mastishka.MeditationViewModel
 import nishparadox.mastishka.data.GongType
@@ -126,6 +129,27 @@ fun SetupScreen(
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        // Tiny info button in the top corner — opens an about/version dialog.
+        var showVersionInfo by remember { mutableStateOf(false) }
+        if (showVersionInfo) {
+            AlertDialog(
+                onDismissRequest = { showVersionInfo = false },
+                confirmButton = {
+                    TextButton(onClick = { showVersionInfo = false }) { Text("Close") }
+                },
+                title = { Text("मस्तिष्क · Mastishka") },
+                text = { Text("Mettā to you 🙏\n\nVersion ${BuildConfig.VERSION_NAME}") },
+            )
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            IconButton(onClick = { showVersionInfo = true }, modifier = Modifier.size(28.dp)) {
+                Icon(
+                    Icons.Outlined.Info,
+                    contentDescription = "About Mastishka",
+                    tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                )
+            }
+        }
         Spacer(Modifier.height(8.dp))
         // Tap the title to flip the heading between Nepali (मस्तिष्क) and English (Mastishka).
         // Fixed-height centered box so the taller Devanagari glyphs don't reflow the column
@@ -145,12 +169,18 @@ fun SetupScreen(
                 color = MaterialTheme.colorScheme.primary,
             )
         }
-        // Only the sunflower is the theme toggle — tap it to flip light/dark.
+        // Two separate taps: the greeting text is an easter egg (flips wording), the
+        // sunflower is the theme toggle (flips light/dark).
+        var greetingMetta by remember { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "Be happy :) ",
+                if (greetingMetta) "Mettā to you :) " else "Be happy :) ",
                 fontSize = 18.sp,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { greetingMetta = !greetingMetta }
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
             )
             Text(
                 "🌻",
