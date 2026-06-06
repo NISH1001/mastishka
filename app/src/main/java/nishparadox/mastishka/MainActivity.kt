@@ -90,6 +90,8 @@ private fun App(vm: MeditationViewModel) {
             onDelete = vm::deleteSessions,
             heartRateEnabled = vm.hcConnected && vm.monitorHeartRate,
             onRefreshHeartRate = { vm.backfillHeartRate() },
+            onExport = vm::exportData,
+            onImport = vm::importData,
         )
     }
 }
