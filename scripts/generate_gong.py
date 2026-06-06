@@ -6,18 +6,26 @@ per-partial exponential decay produces a bell-like timbre. Higher partials decay
 real bells do), leaving a warm sustained hum. A short strike transient is layered at the onset.
 
 Three sizes are produced, differing in fundamental pitch, ring length and decay:
-  - gong_small.wav   bright, higher-pitched, shorter ring
-  - gong_medium.wav  balanced "centered" ring  (the app default)
-  - gong_large.wav   deep temple gong, long ring
+  - gong_small.ogg   bright, higher-pitched, shorter ring
+  - gong_medium.ogg  balanced "centered" ring  (the app default)
+  - gong_large.ogg   deep temple gong, long ring
+
+Output is OGG Vorbis (a free codec, ~10x smaller than WAV). Requires ffmpeg on PATH.
 
 Run:  python3 scripts/generate_gong.py
 """
 import math
 import os
 import struct
+import subprocess
+import tempfile
 import wave
 
 SAMPLE_RATE = 44100
+
+# Vorbis quality for the final res/raw clips. q6 is near-transparent (the decaying bell
+# tail is where lossy codecs warble) while keeping each clip ~40-55 KB vs ~0.5 MB as WAV.
+OGG_QUALITY = "6"
 
 # (frequency ratio, relative amplitude, base decay rate 1/s). Inharmonic, bell-like.
 PARTIALS = [
@@ -70,11 +78,23 @@ def render(out_path: str, fundamental: float, duration: float, decay_scale: floa
         s = (v / peak) * 0.92 * fade
         frames += struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767))
 
-    with wave.open(out_path, "w") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(SAMPLE_RATE)
-        w.writeframes(bytes(frames))
+    # Synthesize to a temporary WAV, then transcode to OGG Vorbis with ffmpeg. Vorbis is a
+    # fully free codec (no MP3/AAC patent concerns) and is what ships in res/raw.
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        wav_path = tmp.name
+    try:
+        with wave.open(wav_path, "w") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(SAMPLE_RATE)
+            w.writeframes(bytes(frames))
+        subprocess.run(
+            ["ffmpeg", "-v", "error", "-y", "-i", wav_path,
+             "-c:a", "libvorbis", "-q:a", OGG_QUALITY, out_path],
+            check=True,
+        )
+    finally:
+        os.remove(wav_path)
 
     size_kb = os.path.getsize(out_path) / 1024
     print(f"Wrote {os.path.basename(out_path)} ({size_kb:.0f} KB, {duration:.1f}s, {fundamental:.0f} Hz)")
@@ -92,7 +112,7 @@ def main() -> None:
         print("Removed legacy gong.wav")
 
     for name, (fundamental, duration, decay_scale) in VARIANTS.items():
-        render(os.path.join(out_dir, f"{name}.wav"), fundamental, duration, decay_scale)
+        render(os.path.join(out_dir, f"{name}.ogg"), fundamental, duration, decay_scale)
 
 
 if __name__ == "__main__":

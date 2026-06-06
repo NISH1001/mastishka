@@ -104,6 +104,6 @@ app/src/main/java/nishparadox/mastishka/
   data/AppData.kt              # Room entities/DAOs/DB + DataStore settings
   ui/Screens.kt                # Setup / Sit / Metta / History composables
   ui/Theme.kt                  # Compose Material3 theme
-app/src/main/res/raw/gong_{small,medium,large}.wav  # synthesized gongs (default: medium)
-scripts/generate_gong.py       # bell/gong additive synthesis, 3 sizes (stdlib only)
+app/src/main/res/raw/gong_{small,medium,large}.ogg  # synthesized gongs (default: medium)
+scripts/generate_gong.py       # bell/gong additive synthesis, 3 sizes (needs ffmpeg for OGG)
 ```
