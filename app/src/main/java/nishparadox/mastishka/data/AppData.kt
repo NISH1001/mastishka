@@ -100,6 +100,14 @@ interface SessionDao {
     @Insert
     suspend fun insert(session: Session): Long
 
+    /** Bulk insert for restoring a backup; ids autogenerate. */
+    @Insert
+    suspend fun insertAll(sessions: List<Session>)
+
+    /** Start times of every saved sit — used to dedupe an import. */
+    @Query("SELECT startedAt FROM sessions")
+    suspend fun allStartTimes(): List<Long>
+
     @Query("DELETE FROM sessions WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<Long>)
 

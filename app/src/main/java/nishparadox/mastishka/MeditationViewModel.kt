@@ -5,6 +5,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -14,15 +15,20 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import nishparadox.mastishka.data.AppDatabase
+import nishparadox.mastishka.data.BackupFormatException
 import nishparadox.mastishka.data.GongType
 import nishparadox.mastishka.data.Person
 import nishparadox.mastishka.data.Session
 import nishparadox.mastishka.data.SettingsStore
+import nishparadox.mastishka.data.exportJson
+import nishparadox.mastishka.data.parseBackup
 import nishparadox.mastishka.health.HealthConnectManager
 import nishparadox.mastishka.service.TimerService
 import androidx.health.connect.client.HealthConnectClient
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MeditationViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -253,6 +259,66 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { db.sessionDao().deleteByIds(ids) }
     }
 
+    /** Write every sit and person to [uri] as a JSON backup. Reports success on the main thread. */
+    fun exportData(uri: Uri, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val ok = runCatching {
+                val json = exportJson(
+                    sessions = sessions.first(),
+                    people = people.first(),
+                    versionName = BuildConfig.VERSION_NAME,
+                    exportedAt = System.currentTimeMillis(),
+                )
+                withContext(Dispatchers.IO) {
+                    val resolver = getApplication<Application>().contentResolver
+                    resolver.openOutputStream(uri)?.use { it.write(json.toByteArray()) }
+                        ?: error("Could not open file for writing")
+                }
+            }.isSuccess
+            onResult(ok)
+        }
+    }
+
+    /** Restore a backup from [uri], merging into existing history. Dedupes sits by start time
+     *  and people by name, so re-importing the same file is a no-op. */
+    fun importData(uri: Uri, onResult: (ImportSummary) -> Unit) {
+        viewModelScope.launch {
+            val summary = runCatching {
+                val text = withContext(Dispatchers.IO) {
+                    val resolver = getApplication<Application>().contentResolver
+                    resolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                        ?: error("Could not open file for reading")
+                }
+                val bundle = parseBackup(text)
+
+                val existingStarts = db.sessionDao().allStartTimes().toSet()
+                val newSessions = bundle.sessions
+                    .filter { it.startedAt !in existingStarts }
+                    .distinctBy { it.startedAt }
+                db.sessionDao().insertAll(newSessions)
+
+                val existingNames = people.first().map { it.name.lowercase() }.toMutableSet()
+                var peopleAdded = 0
+                for (p in bundle.people) {
+                    if (existingNames.add(p.name.lowercase())) {
+                        db.personDao().insert(p)
+                        peopleAdded++
+                    }
+                }
+
+                ImportSummary(
+                    sessionsAdded = newSessions.size,
+                    sessionsSkipped = bundle.sessions.size - newSessions.size,
+                    peopleAdded = peopleAdded,
+                )
+            }.getOrElse { e ->
+                val msg = (e as? BackupFormatException)?.message ?: "Couldn't read that backup file."
+                ImportSummary(error = msg)
+            }
+            onResult(summary)
+        }
+    }
+
     fun discardSit() {
         selectedPeople.clear()
         lastSitHr = null
@@ -331,3 +397,11 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
 data class HrSummary(val avg: Int, val min: Int, val max: Int, val series: List<Int>) {
     val seriesCsv: String get() = series.joinToString(",")
 }
+
+/** Outcome of importing a backup. [error] is non-null only when the file couldn't be read. */
+data class ImportSummary(
+    val sessionsAdded: Int = 0,
+    val sessionsSkipped: Int = 0,
+    val peopleAdded: Int = 0,
+    val error: String? = null,
+)

@@ -2,6 +2,7 @@ package nishparadox.mastishka.ui
 
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import android.speech.RecognizerIntent
 import android.view.WindowManager
 import android.widget.Toast
@@ -39,6 +40,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Sync
@@ -50,6 +52,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -92,6 +96,7 @@ import androidx.compose.ui.unit.sp
 import androidx.health.connect.client.PermissionController
 import nishparadox.mastishka.BuildConfig
 import nishparadox.mastishka.HrSummary
+import nishparadox.mastishka.ImportSummary
 import nishparadox.mastishka.MeditationViewModel
 import nishparadox.mastishka.data.GongType
 import nishparadox.mastishka.data.Person
@@ -686,14 +691,35 @@ fun HistoryScreen(
     onDelete: (List<Long>) -> Unit,
     heartRateEnabled: Boolean,
     onRefreshHeartRate: () -> Unit,
+    onExport: (Uri, (Boolean) -> Unit) -> Unit,
+    onImport: (Uri, (ImportSummary) -> Unit) -> Unit,
 ) {
     val context = LocalContext.current
     val selected = remember { mutableStateListOf<Long>() }
     var confirmDelete by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
+    var pendingImport by remember { mutableStateOf<Uri?>(null) }
     val selecting = selected.isNotEmpty()
 
     // Auto-pull heart rate for any sit still missing it whenever History opens.
     LaunchedEffect(Unit) { if (heartRateEnabled) onRefreshHeartRate() }
+
+    // Storage Access Framework: the user picks where to write / which file to read. No
+    // storage permission needed, and the granted Uri is scoped to just that document.
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) onExport(uri) { ok ->
+            Toast.makeText(
+                context,
+                if (ok) "Backup saved" else "Couldn't save backup",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) pendingImport = uri }
 
     fun toggle(id: Long) {
         if (selected.contains(id)) selected.remove(id) else selected.add(id)
@@ -719,12 +745,38 @@ fun HistoryScreen(
                         IconButton(onClick = { confirmDelete = true }) {
                             Icon(Icons.Filled.Delete, contentDescription = "Delete selected")
                         }
-                    } else if (heartRateEnabled) {
-                        IconButton(onClick = {
-                            onRefreshHeartRate()
-                            Toast.makeText(context, "Refreshing heart rate…", Toast.LENGTH_SHORT).show()
-                        }) {
-                            Icon(Icons.Filled.Sync, contentDescription = "Refresh heart rate")
+                    } else {
+                        if (heartRateEnabled) {
+                            IconButton(onClick = {
+                                onRefreshHeartRate()
+                                Toast.makeText(context, "Refreshing heart rate…", Toast.LENGTH_SHORT).show()
+                            }) {
+                                Icon(Icons.Filled.Sync, contentDescription = "Refresh heart rate")
+                            }
+                        }
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "More")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Export data…") },
+                                onClick = {
+                                    menuOpen = false
+                                    // e.g. mastishka-backup-june-06-2026-1432.json — timestamped
+                                    // (and filename-safe) so each export is a distinct file.
+                                    val name = SimpleDateFormat(
+                                        "'mastishka-backup-'MMMM-dd-yyyy-HHmm'.json'", Locale.US,
+                                    ).format(Date()).lowercase(Locale.US)
+                                    exportLauncher.launch(name)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Import data…") },
+                                onClick = {
+                                    menuOpen = false
+                                    importLauncher.launch(arrayOf("application/json"))
+                                },
+                            )
                         }
                     }
                 },
@@ -811,6 +863,32 @@ fun HistoryScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    pendingImport?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { pendingImport = null },
+            title = { Text("Import backup?") },
+            text = { Text("Sits and people from the file are merged into your history. Anything already present is skipped.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingImport = null
+                    onImport(uri) { summary ->
+                        val msg = when {
+                            summary.error != null -> summary.error
+                            summary.sessionsAdded == 0 -> "Already up to date — nothing new to import."
+                            else -> "Imported ${summary.sessionsAdded} sit${if (summary.sessionsAdded == 1) "" else "s"}" +
+                                (if (summary.sessionsSkipped > 0) ", ${summary.sessionsSkipped} already present" else "") +
+                                (if (summary.peopleAdded > 0) " · ${summary.peopleAdded} new ${if (summary.peopleAdded == 1) "person" else "people"}" else "")
+                        }
+                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                    }
+                }) { Text("Import") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingImport = null }) { Text("Cancel") }
             },
         )
     }
