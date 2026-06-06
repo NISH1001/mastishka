@@ -28,7 +28,8 @@ foreground service + wake lock so the gong fires reliably even with the screen o
 ## Screenshots
 
 <p>
-  <img src="docs/screenshots/setup.png" width="200" alt="Setup — duration, gong volume & sound" />
+  <img src="docs/screenshots/setup.png" width="200" alt="Setup — मस्तिष्क title, practice & duration" />
+  <img src="docs/screenshots/gong.png" width="200" alt="Gong — volume & segmented sound picker" />
   <img src="docs/screenshots/sit.png" width="200" alt="Sit — countdown" />
   <img src="docs/screenshots/metta.png" width="200" alt="Metta Bhavana" />
   <img src="docs/screenshots/history.png" width="200" alt="History with multi-select delete" />

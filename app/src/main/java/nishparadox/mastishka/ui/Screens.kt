@@ -256,7 +256,10 @@ fun SetupScreen(
                     }
                 }
                 Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                ) {
                     FilledTonalButton(onClick = { vm.testGong() }) { Text("Test gong") }
                     OutlinedButton(onClick = { vm.stopTestGong() }) { Text("Stop") }
                 }
@@ -324,7 +327,11 @@ fun SetupScreen(
         }
 
         Spacer(Modifier.height(8.dp))
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Checkbox(
                 checked = vm.monitorHeartRate && vm.hcConnected,
                 onCheckedChange = { vm.updateMonitorHeartRate(it) },

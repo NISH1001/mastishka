@@ -1,7 +1,9 @@
 package nishparadox.mastishka
 
 import android.app.Application
+import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.MediaPlayer
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -276,16 +278,17 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         val player = MediaPlayer().apply {
             setAudioAttributes(
                 AudioAttributes.Builder()
-                    // Media channel — see TimerService.playGong() for the rationale.
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    // Alarm channel — see TimerService.playGong() for the rationale (rings through
+                    // DND; raiseAlarmVolume() maxes the alarm stream only while it plays).
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build()
             )
         }
         val afd = getApplication<Application>().resources.openRawResourceFd(gongType.rawResId) ?: return
         afd.use { player.setDataSource(it.fileDescriptor, it.startOffset, it.length) }
         player.setVolume(gongVolume, gongVolume)
-        player.setOnPreparedListener { it.start() }
+        player.setOnPreparedListener { raiseAlarmVolume(); it.start() }
         player.setOnCompletionListener { stopTestGong() }
         player.prepareAsync()
         testPlayer = player
@@ -294,6 +297,28 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
     fun stopTestGong() {
         testPlayer?.let { runCatching { it.release() } }
         testPlayer = null
+        restoreAlarmVolume()
+    }
+
+    // Max the alarm stream only while the test gong sounds, restoring the user's level after.
+    // Mirrors TimerService so the test reflects the real sit. Alarm *volume* only — not schedules.
+    private var savedAlarmVolume: Int? = null
+
+    private fun raiseAlarmVolume() {
+        val am = getApplication<Application>().getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (savedAlarmVolume == null) savedAlarmVolume = am.getStreamVolume(AudioManager.STREAM_ALARM)
+        runCatching {
+            am.setStreamVolume(AudioManager.STREAM_ALARM, am.getStreamMaxVolume(AudioManager.STREAM_ALARM), 0)
+        }
+    }
+
+    private fun restoreAlarmVolume() {
+        val saved = savedAlarmVolume ?: return
+        savedAlarmVolume = null
+        runCatching {
+            (getApplication<Application>().getSystemService(Context.AUDIO_SERVICE) as AudioManager)
+                .setStreamVolume(AudioManager.STREAM_ALARM, saved, 0)
+        }
     }
 
     override fun onCleared() {

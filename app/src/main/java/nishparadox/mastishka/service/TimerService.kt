@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.Build
 import android.os.IBinder
@@ -126,12 +127,12 @@ class TimerService : Service() {
         val player = MediaPlayer().apply {
             setAudioAttributes(
                 AudioAttributes.Builder()
-                    // Media channel: tracks the volume slider the user actually knows (the
-                    // one the hardware buttons move) and still plays on silent/vibrate and
-                    // through DND's default config. The old USAGE_ALARM routed to a separate,
-                    // often-muted alarm slider (notably on Samsung One UI) — the quiet-gong bug.
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    // Alarm channel so the gong rings through Do Not Disturb (alarms are an
+                    // allowed DND exception by default). The alarm stream is a separate, often-low
+                    // slider on Samsung One UI, so raiseAlarmVolume() maxes it only while the gong
+                    // plays (restored after) — the in-app slider stays the real loudness control.
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build()
             )
         }
@@ -140,8 +141,8 @@ class TimerService : Service() {
             player.setDataSource(it.fileDescriptor, it.startOffset, it.length)
         }
         player.setVolume(gongVolume, gongVolume)
-        player.setOnPreparedListener { it.start() }
-        player.setOnCompletionListener { it.release(); if (gongPlayer === it) gongPlayer = null }
+        player.setOnPreparedListener { raiseAlarmVolume(); it.start() }
+        player.setOnCompletionListener { restoreAlarmVolume(); it.release(); if (gongPlayer === it) gongPlayer = null }
         player.prepareAsync()
         gongPlayer = player
     }
@@ -149,6 +150,29 @@ class TimerService : Service() {
     private fun releaseGong() {
         gongPlayer?.let { runCatching { it.release() } }
         gongPlayer = null
+        restoreAlarmVolume()
+    }
+
+    // Max the alarm stream only while the gong sounds, remembering the user's level so it can
+    // be put back. Touches the alarm *volume* only — never alarm schedules. Wrapped in
+    // runCatching since setStreamVolume can throw on restricted devices.
+    private var savedAlarmVolume: Int? = null
+
+    private fun raiseAlarmVolume() {
+        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (savedAlarmVolume == null) savedAlarmVolume = am.getStreamVolume(AudioManager.STREAM_ALARM)
+        runCatching {
+            am.setStreamVolume(AudioManager.STREAM_ALARM, am.getStreamMaxVolume(AudioManager.STREAM_ALARM), 0)
+        }
+    }
+
+    private fun restoreAlarmVolume() {
+        val saved = savedAlarmVolume ?: return
+        savedAlarmVolume = null
+        runCatching {
+            (getSystemService(Context.AUDIO_SERVICE) as AudioManager)
+                .setStreamVolume(AudioManager.STREAM_ALARM, saved, 0)
+        }
     }
 
     // ---------- Wake lock ----------
