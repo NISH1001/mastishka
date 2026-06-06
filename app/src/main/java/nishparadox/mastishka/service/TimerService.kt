@@ -126,8 +126,12 @@ class TimerService : Service() {
         val player = MediaPlayer().apply {
             setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    // Media channel: tracks the volume slider the user actually knows (the
+                    // one the hardware buttons move) and still plays on silent/vibrate and
+                    // through DND's default config. The old USAGE_ALARM routed to a separate,
+                    // often-muted alarm slider (notably on Samsung One UI) — the quiet-gong bug.
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                     .build()
             )
         }

@@ -47,6 +47,9 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
     // Capture heart rate for the sit (only meaningful when Health Connect is connected).
     var monitorHeartRate by mutableStateOf(false)
         private set
+    // Title heading language: true = Nepali (मस्तिष्क), false = English (Mastishka).
+    var nepaliTitle by mutableStateOf(true)
+        private set
 
     // People selected for the current sit's metta (reset after saving).
     val selectedPeople = mutableStateListOf<String>()
@@ -76,7 +79,13 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { darkTheme = settings.darkTheme.first() }
         viewModelScope.launch { meditationType = settings.meditationType.first() }
         viewModelScope.launch { monitorHeartRate = settings.monitorHeartRate.first() }
+        viewModelScope.launch { nepaliTitle = settings.nepaliTitle.first() }
         refreshHealthConnect()
+    }
+
+    fun toggleNepaliTitle() {
+        nepaliTitle = !nepaliTitle
+        viewModelScope.launch { settings.setNepaliTitle(nepaliTitle) }
     }
 
     fun updateMonitorHeartRate(enabled: Boolean) {
@@ -267,8 +276,9 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         val player = MediaPlayer().apply {
             setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    // Media channel — see TimerService.playGong() for the rationale.
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                     .build()
             )
         }

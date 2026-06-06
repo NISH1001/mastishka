@@ -57,6 +57,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -98,7 +101,7 @@ import java.util.Locale
 
 // ---------------------------------------------------------------- Setup
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun SetupScreen(
     vm: MeditationViewModel,
@@ -124,7 +127,24 @@ fun SetupScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.height(8.dp))
-        Text("Mastishka", fontSize = 34.sp, fontWeight = FontWeight.Light, color = MaterialTheme.colorScheme.primary)
+        // Tap the title to flip the heading between Nepali (मस्तिष्क) and English (Mastishka).
+        // Fixed-height centered box so the taller Devanagari glyphs don't reflow the column
+        // (and nudge the scroll) when toggling.
+        Box(
+            modifier = Modifier
+                .height(56.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .clickable { vm.toggleNepaliTitle() }
+                .padding(horizontal = 8.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                if (vm.nepaliTitle) "मस्तिष्क" else "Mastishka",
+                fontSize = 34.sp,
+                fontWeight = FontWeight.Light,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
         // Only the sunflower is the theme toggle — tap it to flip light/dark.
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -224,13 +244,15 @@ fun SetupScreen(
                 Spacer(Modifier.height(12.dp))
                 Text("Gong sound", style = MaterialTheme.typography.labelLarge)
                 Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    GongType.entries.forEach { type ->
-                        if (vm.gongType == type) {
-                            Button(onClick = { vm.updateGongType(type) }) { Text(type.label) }
-                        } else {
-                            OutlinedButton(onClick = { vm.updateGongType(type) }) { Text(type.label) }
-                        }
+                // Single-choice segmented control: equal-width segments that share the row width,
+                // so labels can't overflow/wrap even at large font scales (e.g. Samsung One UI).
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    GongType.entries.forEachIndexed { index, type ->
+                        SegmentedButton(
+                            selected = vm.gongType == type,
+                            onClick = { vm.updateGongType(type) },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = GongType.entries.size),
+                        ) { Text(type.label, maxLines = 1) }
                     }
                 }
                 Spacer(Modifier.height(12.dp))

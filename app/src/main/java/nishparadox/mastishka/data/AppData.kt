@@ -157,6 +157,7 @@ class SettingsStore(private val context: Context) {
     private val keyDarkTheme = booleanPreferencesKey("dark_theme")
     private val keyMeditationType = stringPreferencesKey("meditation_type")
     private val keyMonitorHr = booleanPreferencesKey("monitor_heart_rate")
+    private val keyNepaliTitle = booleanPreferencesKey("nepali_title")
 
     val durationMinutes: Flow<Int> =
         context.dataStore.data.map { it[keyDurationMin] ?: 5 }
@@ -203,5 +204,13 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setMonitorHeartRate(enabled: Boolean) {
         context.dataStore.edit { it[keyMonitorHr] = enabled }
+    }
+
+    /** Show the title in Nepali (मस्तिष्क) vs English (Mastishka); defaults to Nepali. */
+    val nepaliTitle: Flow<Boolean> =
+        context.dataStore.data.map { it[keyNepaliTitle] ?: true }
+
+    suspend fun setNepaliTitle(enabled: Boolean) {
+        context.dataStore.edit { it[keyNepaliTitle] = enabled }
     }
 }
