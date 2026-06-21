@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.Build
@@ -124,24 +125,19 @@ class TimerService : Service() {
 
     private fun playGong() {
         releaseGong()
+        // On headphones, play on the media usage so it reaches the ears (the alarm stream skips
+        // Bluetooth). Otherwise keep the alarm stream — loud, and rings through Do Not Disturb —
+        // and max its volume only while the gong plays (the in-app slider stays the loudness knob).
+        val onHeadphones = headphonesConnected(getSystemService(Context.AUDIO_SERVICE) as AudioManager)
         val player = MediaPlayer().apply {
-            setAudioAttributes(
-                AudioAttributes.Builder()
-                    // Alarm channel so the gong rings through Do Not Disturb (alarms are an
-                    // allowed DND exception by default). The alarm stream is a separate, often-low
-                    // slider on Samsung One UI, so raiseAlarmVolume() maxes it only while the gong
-                    // plays (restored after) — the in-app slider stays the real loudness control.
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-            )
+            setAudioAttributes(gongAudioAttributes(onHeadphones))
         }
         val afd = resources.openRawResourceFd(gongResId) ?: return
         afd.use {
             player.setDataSource(it.fileDescriptor, it.startOffset, it.length)
         }
         player.setVolume(gongVolume, gongVolume)
-        player.setOnPreparedListener { raiseAlarmVolume(); it.start() }
+        player.setOnPreparedListener { if (!onHeadphones) raiseAlarmVolume(); it.start() }
         player.setOnCompletionListener { restoreAlarmVolume(); it.release(); if (gongPlayer === it) gongPlayer = null }
         player.prepareAsync()
         gongPlayer = player
@@ -290,6 +286,29 @@ class TimerService : Service() {
         }
     }
 }
+
+/**
+ * True if headphones (wired, USB, or Bluetooth) are an active output. The alarm stream the gong
+ * normally uses won't route to Bluetooth — alarms deliberately stay on the phone speaker so they
+ * aren't missed — so a meditator wearing earbuds would hear nothing. When this is true we play the
+ * gong on the media usage instead, which follows the active output into the headphones.
+ */
+fun headphonesConnected(am: AudioManager): Boolean =
+    am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any {
+        it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+            it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+            it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+            it.type == AudioDeviceInfo.TYPE_BLE_HEADSET
+    }
+
+/** Build the gong's audio attributes: media usage on headphones (so it reaches the ears),
+ *  otherwise the alarm usage (loud, and rings through Do Not Disturb). */
+fun gongAudioAttributes(onHeadphones: Boolean): AudioAttributes =
+    AudioAttributes.Builder()
+        .setUsage(if (onHeadphones) AudioAttributes.USAGE_MEDIA else AudioAttributes.USAGE_ALARM)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+        .build()
 
 /** Formats milliseconds as H:MM:SS (or M:SS under an hour). */
 fun formatClock(millis: Long): String {
