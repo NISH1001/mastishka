@@ -11,3 +11,4 @@ local.properties
 /.idea/
 *.apk
 .claude/
+.superpowers/
