@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>Mastishka · a sit in your browser</title>
+<style>
+  :root {
+    --bg0: #17281f; --bg1: #0a140f;
+    --mint: #8FD3C2; --teal: #5E8C7F; --ink: #E9F4EF;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg1);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden; user-select: none; -webkit-user-select: none;
+  }
+  #stage { position: fixed; inset: 0; z-index: 0; display: block; }
+
+  .view {
+    position: fixed; inset: 0; z-index: 1;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px; padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+  }
+  .view[hidden] { display: none; }
+  /* setup & complete dim the orb a touch so content reads */
+  #setup, #complete { background: radial-gradient(circle at 50% 45%, rgba(8,20,15,0.40), rgba(6,16,12,0.86)); }
+  #sit { pointer-events: none; }
+
+  .panel {
+    width: 100%; max-width: 430px;
+    background: rgba(10,21,16,0.55);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    border: 1px solid rgba(143,211,194,0.16);
+    border-radius: 26px; padding: 30px 26px;
+    display: flex; flex-direction: column; align-items: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+  }
+
+  .title { font-size: 30px; font-weight: 300; color: var(--mint); letter-spacing: 0.5px; margin: 0; }
+  .tagline { font-size: 14px; opacity: 0.7; margin: 8px 0 22px; display: inline-flex; align-items: center; gap: 6px; }
+  .sunflower { background: none; border: none; padding: 0; font-size: 17px; line-height: 1; cursor: pointer; }
+  @keyframes sunspin { to { transform: rotate(360deg); } }
+  .sunflower.spin { animation: sunspin .6s ease; }
+
+  .label { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; opacity: 0.5; align-self: flex-start; margin: 4px 2px 10px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; justify-content: center; }
+  .chip {
+    border: 1px solid rgba(143,211,194,0.28); background: transparent; color: var(--ink);
+    border-radius: 999px; padding: 9px 15px; font-size: 14px; cursor: pointer;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .chip:hover { border-color: rgba(143,211,194,0.55); }
+  .chip.active { background: var(--mint); border-color: var(--mint); color: #06281F; font-weight: 600; }
+
+  .block { width: 100%; margin-top: 22px; }
+
+  .stepper { display: flex; align-items: center; justify-content: center; gap: 20px; margin-top: 12px; }
+  .stepper button {
+    width: 44px; height: 44px; border-radius: 50%; font-size: 24px; line-height: 0;
+    border: 1px solid rgba(143,211,194,0.35); background: transparent; color: var(--mint); cursor: pointer;
+  }
+  .stepper button:active { background: rgba(143,211,194,0.12); }
+  .durval { font-size: 30px; font-weight: 500; min-width: 132px; text-align: center; }
+  .durval small { font-size: 14px; opacity: 0.55; font-weight: 400; margin-left: 4px; }
+
+  .gongrow { display: flex; align-items: center; gap: 12px; width: 100%; margin-top: 12px; }
+  .gongrow input[type=range] { flex: 1; accent-color: var(--mint); height: 4px; }
+  .gongrow .vicon { font-size: 18px; opacity: 0.7; }
+  .testbtn { background: transparent; border: none; color: var(--mint); font-size: 13px; cursor: pointer; opacity: 0.85; padding: 6px; }
+
+  .begin {
+    margin-top: 28px; width: 100%; height: 60px; border: none; border-radius: 18px;
+    background: var(--mint); color: #06281F; font-size: 18px; font-weight: 600; cursor: pointer;
+    transition: filter .15s;
+  }
+  .begin:active { filter: brightness(0.92); }
+
+  .ghlink { position: fixed; top: 16px; right: 16px; z-index: 3; opacity: 0.45; color: var(--ink); transition: opacity .15s; }
+  .ghlink:hover { opacity: 0.9; }
+  .ghlink svg { width: 26px; height: 26px; display: block; }
+
+  /* sit screen: just the End affordance (timer is drawn on the canvas) */
+  .endbtn {
+    pointer-events: auto; position: absolute; bottom: max(38px, env(safe-area-inset-bottom));
+    left: 50%; transform: translateX(-50%);
+    border: 1px solid rgba(227,239,234,0.30); background: rgba(8,18,14,0.35);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    color: var(--ink); border-radius: 16px; padding: 14px 40px; font-size: 17px; cursor: pointer;
+    transition: background .15s, opacity .4s;
+  }
+  .endbtn:active { background: rgba(143,211,194,0.14); }
+
+  .summary { text-align: center; }
+  .summary .big { font-size: 22px; font-weight: 300; margin: 0 0 6px; }
+  .summary .total { font-size: 46px; font-weight: 300; color: var(--mint); margin: 4px 0 2px; }
+  .summary .metta { opacity: 0.7; margin: 14px 0 26px; }
+</style>
+</head>
+<body>
+  <canvas id="stage"></canvas>
+
+  <a class="ghlink" id="ghlink" href="https://github.com/NISH1001/mastishka" target="_blank" rel="noopener" aria-label="Mastishka on GitHub">
+    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+  </a>
+
+  <!-- ---------------- Setup ---------------- -->
+  <section class="view" id="setup">
+    <div class="panel">
+      <h1 class="title">मस्तिष्क · Mastishka</h1>
+      <p class="tagline"><span id="greeting">Mettā to you</span><button class="sunflower" id="sunflower" aria-label="sunflower">🌻</button></p>
+
+      <span class="label">Practice (optional)</span>
+      <div class="chips" id="practiceChips">
+        <button class="chip" data-practice="Vipassana">Vipassana</button>
+        <button class="chip" data-practice="Anapana">Anapana</button>
+        <button class="chip" data-practice="Focused Breathing">Focused Breathing</button>
+        <button class="chip" data-practice="Concentration">Concentration</button>
+      </div>
+
+      <div class="block">
+        <span class="label">Duration</span>
+        <div class="chips" id="durChips">
+          <button class="chip" data-min="10">10m</button>
+          <button class="chip" data-min="20">20m</button>
+          <button class="chip" data-min="30">30m</button>
+          <button class="chip" data-min="45">45m</button>
+          <button class="chip" data-min="60">1h</button>
+        </div>
+        <div class="stepper">
+          <button id="durMinus" aria-label="decrease minutes">−</button>
+          <span class="durval"><span id="durVal">20</span><small>min</small></span>
+          <button id="durPlus" aria-label="increase minutes">+</button>
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="label">Gong</span>
+        <div class="chips" id="gongChips">
+          <button class="chip" data-gong="small">Small</button>
+          <button class="chip active" data-gong="medium">Medium</button>
+          <button class="chip" data-gong="large">Large</button>
+        </div>
+        <div class="gongrow">
+          <span class="vicon" id="vicon">🔊</span>
+          <input type="range" id="vol" min="0" max="1" step="0.01" value="0.7" aria-label="gong volume" />
+          <button class="testbtn" id="testGong">Test</button>
+        </div>
+      </div>
+
+      <button class="begin" id="beginBtn">Begin sit</button>
+    </div>
+  </section>
+
+  <!-- ---------------- Sit ---------------- -->
+  <section class="view" id="sit" hidden>
+    <button class="endbtn" id="endBtn">End sit</button>
+  </section>
+
+  <!-- ---------------- Complete ---------------- -->
+  <section class="view" id="complete" hidden>
+    <div class="panel summary">
+      <p class="big">You sat for</p>
+      <p class="total" id="totalTime">—</p>
+      <p class="metta">Mettā to you 🙏</p>
+      <button class="begin" id="againBtn">Sit again</button>
+    </div>
+  </section>
+
+<script>
+(function () {
+  "use strict";
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------------- state ----------------
+  var state = 'setup';
+  var practice = '';
+  var durationMin = 20;
+  var volume = 0.7;
+  var sitStart = 0, plannedMs = 0, totalMs = 0;
+
+  function $(id) { return document.getElementById(id); }
+  var views = { setup: $('setup'), sit: $('sit'), complete: $('complete') };
+  function show(s) {
+    state = s;
+    views.setup.hidden = s !== 'setup';
+    views.sit.hidden = s !== 'sit';
+    views.complete.hidden = s !== 'complete';
+  }
+
+  // ---------------- audio: gong synthesized (port of generate_gong.py, medium) ----------------
+  var PARTIALS = [
+    [0.50, 0.30, 0.6], [1.00, 1.00, 0.7], [1.19, 0.55, 1.1], [1.71, 0.45, 1.6],
+    [2.00, 0.40, 1.8], [2.74, 0.30, 2.6], [3.00, 0.22, 2.9], [3.76, 0.18, 3.6],
+    [4.07, 0.14, 4.2], [5.12, 0.10, 5.5]
+  ];
+  var GONGS = {
+    small:  { f: 392.0, dur: 5.0, decay: 1.45 },
+    medium: { f: 261.0, dur: 6.5, decay: 1.0 },
+    large:  { f: 165.0, dur: 8.0, decay: 0.72 }
+  };
+  var gongSize = 'medium';
+  var audioCtx = null, gongBuffers = {}, gongSrc = null, gongStartTime = 0;
+
+  function gongSample(t, gv) {
+    var v = 0;
+    for (var i = 0; i < PARTIALS.length; i++) {
+      var ratio = PARTIALS[i][0], amp = PARTIALS[i][1], decay = PARTIALS[i][2];
+      var freq = gv.f * ratio;
+      var detune = 1 + 0.0008 * Math.sin(2 * Math.PI * 0.7 * t * ratio);
+      var env = Math.exp(-decay * gv.decay * t);
+      v += amp * env * Math.sin(2 * Math.PI * freq * detune * t);
+    }
+    if (t < 0.025) {
+      v += 0.5 * Math.exp(-90 * t) * (Math.sin(2 * Math.PI * 2600 * t) + 0.6 * Math.sin(2 * Math.PI * 5300 * t));
+    }
+    return v;
+  }
+  function renderGong(ctx, gv) {
+    var SR = ctx.sampleRate, n = Math.floor(SR * gv.dur);
+    var arr = new Float32Array(n), peak = 0;
+    for (var i = 0; i < n; i++) { var s = gongSample(i / SR, gv); arr[i] = s; var a = Math.abs(s); if (a > peak) peak = a; }
+    peak = peak || 1;
+    for (var j = 0; j < n; j++) {
+      var t = j / SR;
+      var fade = t < gv.dur - 0.5 ? 1 : Math.max(0, (gv.dur - t) / 0.5);
+      arr[j] = (arr[j] / peak) * 0.92 * fade;
+    }
+    var buf = ctx.createBuffer(1, n, SR);
+    buf.copyToChannel(arr, 0);
+    return buf;
+  }
+  function ensureAudio() {
+    if (!audioCtx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      audioCtx = new AC();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+  function getGong(size) {
+    if (!audioCtx) return null;
+    if (!gongBuffers[size]) gongBuffers[size] = renderGong(audioCtx, GONGS[size]);
+    return gongBuffers[size];
+  }
+  function playGongNow() {
+    ensureAudio();
+    var buf = getGong(gongSize);
+    if (!audioCtx || !buf) return;
+    var src = audioCtx.createBufferSource(); src.buffer = buf;
+    var g = audioCtx.createGain(); g.gain.value = volume;
+    src.connect(g); g.connect(audioCtx.destination); src.start();
+  }
+  function scheduleGong(delaySec) {
+    cancelGong();
+    var buf = getGong(gongSize);
+    if (!audioCtx || !buf) return;
+    gongSrc = audioCtx.createBufferSource(); gongSrc.buffer = buf;
+    var g = audioCtx.createGain(); g.gain.value = volume;
+    gongSrc.connect(g); g.connect(audioCtx.destination);
+    gongStartTime = audioCtx.currentTime + Math.max(0, delaySec);
+    gongSrc.start(gongStartTime); // sample-accurate, fires even if tab is hidden
+  }
+  function cancelGong() {
+    if (gongSrc && audioCtx && audioCtx.currentTime < gongStartTime) {
+      try { gongSrc.stop(); } catch (e) {}
+    }
+    gongSrc = null;
+  }
+
+  // ---------------- wake lock ----------------
+  var wakeLock = null;
+  function requestWake() {
+    try { if ('wakeLock' in navigator) navigator.wakeLock.request('screen').then(function (w) { wakeLock = w; }).catch(function () {}); } catch (e) {}
+  }
+  function releaseWake() { try { if (wakeLock) wakeLock.release(); } catch (e) {} wakeLock = null; }
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && state === 'sit') requestWake();
+  });
+
+  // ---------------- time format ----------------
+  function fmt(ms) {
+    var s = Math.max(0, Math.floor(ms / 1000));
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return h > 0 ? h + ':' + p(m) + ':' + p(ss) : p(m) + ':' + p(ss);
+  }
+
+  // ---------------- orb (liquid gel + bubbles) ----------------
+  var GEL = {
+    bg0: '#17281f', bg1: '#0a140f',
+    stops: [[0, 'rgba(206,242,228,1)'], [0.42, 'rgba(143,211,194,1)'], [0.78, 'rgba(94,140,127,1)'], [1, 'rgba(38,72,62,1)']],
+    glow: '143,211,194', gloss: '236,255,248'
+  };
+  var cv = $('stage'), ctx = cv.getContext('2d');
+  var soft = document.createElement('canvas'), mask = document.createElement('canvas'), col = document.createElement('canvas');
+  var sctx = soft.getContext('2d'), mctx = mask.getContext('2d'), cctx = col.getContext('2d');
+  var particles = [], emitAcc = 0;
+  var EMIT_INT = reduce ? 2.6 : 0.85, MAX_P = reduce ? 4 : 9;
+
+  function fit() {
+    var W = Math.max(1, Math.round(window.innerWidth * dpr));
+    var H = Math.max(1, Math.round(window.innerHeight * dpr));
+    [cv, soft, mask, col].forEach(function (c) { c.width = W; c.height = H; });
+    cv.style.width = window.innerWidth + 'px'; cv.style.height = window.innerHeight + 'px';
+  }
+  window.addEventListener('resize', fit); fit();
+
+  function breath(t) { var P = 10, x = (t % P) / P; return 0.5 - 0.5 * Math.cos(2 * Math.PI * x); }
+
+  function emit(Rb, cx, cy, mainR) {
+    var ang = Math.random() * Math.PI * 2, floater = Math.random() < 0.55;
+    var speed = Rb * (floater ? 1.5 + Math.random() * 0.6 : 1.8 + Math.random() * 0.6);
+    var tang = (Math.random() < 0.5 ? -1 : 1) * Rb * (floater ? 1.1 + Math.random() * 0.7 : 0.2 + Math.random() * 0.3);
+    var ca = Math.cos(ang), sa = Math.sin(ang);
+    particles.push({
+      x: cx + ca * mainR * 0.95, y: cy + sa * mainR * 0.95,
+      vx: ca * speed - sa * tang, vy: sa * speed + ca * tang,
+      r: Rb * (0.15 + Math.random() * 0.13),
+      g0: Rb * (floater ? 0.30 : 0.7), drag: floater ? 0.995 : 0.991
+    });
+  }
+  function updateSim(dt, t) {
+    var w = cv.width, h = cv.height;
+    var Rb = Math.min(w, h) * 0.18, cx = w / 2, cy = h / 2;
+    var mainR = Rb * (0.80 + 0.35 * breath(t)), maxR = Math.min(w, h) * 0.46;
+    emitAcc += dt;
+    if (emitAcc > EMIT_INT && particles.length < MAX_P) { emitAcc = 0; emit(Rb, cx, cy, mainR); }
+    for (var i = particles.length - 1; i >= 0; i--) {
+      var pt = particles[i];
+      var dx = cx - pt.x, dy = cy - pt.y, dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      var g = pt.g0 * (1 + 2.6 * Math.pow(dist / maxR, 2));
+      pt.vx += (dx / dist) * g * dt; pt.vy += (dy / dist) * g * dt;
+      pt.vx += (Math.random() - 0.5) * Rb * 0.5 * dt; pt.vy += (Math.random() - 0.5) * Rb * 0.5 * dt;
+      pt.vx *= pt.drag; pt.vy *= pt.drag;
+      pt.x += pt.vx * dt; pt.y += pt.vy * dt;
+      if (dist < mainR * 0.7) pt.r *= (1 - 1.4 * dt);
+      if (dist < mainR * 0.45 || pt.r < Rb * 0.04) particles.splice(i, 1);
+    }
+  }
+
+  function drawTimer(cx, cy, Rb, t, b) {
+    var W = cv.width, H = cv.height;
+    var elapsed = performance.now() - sitStart;
+    var over = elapsed >= plannedMs;
+    var main = over ? '+' + fmt(elapsed - plannedMs) : fmt(plannedMs - elapsed);
+    var sub = over ? 'OVERTIME' : (practice || 'MEDITATION').toUpperCase();
+
+    var scrim = ctx.createRadialGradient(cx, cy, 0, cx, cy, Rb * 1.15);
+    scrim.addColorStop(0, 'rgba(6,22,17,0.40)'); scrim.addColorStop(0.7, 'rgba(6,22,17,0.16)'); scrim.addColorStop(1, 'rgba(6,22,17,0)');
+    ctx.fillStyle = scrim; ctx.fillRect(0, 0, W, H);
+
+    ctx.save();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '300 ' + (Rb * 0.62) + 'px -apple-system, system-ui, "Segoe UI", Roboto, sans-serif';
+    // liquid shimmer: a slow band of light sweeps through the digits
+    var tw = ctx.measureText(main).width;
+    var p = 0.06 + 0.88 * ((t * 0.12) % 1);
+    var grd = ctx.createLinearGradient(cx - tw / 2, cy, cx + tw / 2, cy);
+    grd.addColorStop(0, 'rgba(150,210,192,0.92)');
+    grd.addColorStop(p, 'rgba(240,255,249,1)');
+    grd.addColorStop(1, 'rgba(150,210,192,0.92)');
+    ctx.shadowColor = 'rgba(143,211,194,' + (0.30 + 0.25 * b) + ')'; ctx.shadowBlur = Rb * 0.14;
+    ctx.fillStyle = grd;
+    ctx.fillText(main, cx, cy - Rb * 0.05);
+    ctx.shadowBlur = 0;
+
+    if ('letterSpacing' in ctx) ctx.letterSpacing = (Rb * 0.045) + 'px';
+    ctx.font = '400 ' + (Rb * 0.14) + 'px -apple-system, system-ui, sans-serif';
+    ctx.fillStyle = over ? 'rgba(143,211,194,0.85)' : 'rgba(233,244,239,0.5)';
+    ctx.fillText(sub, cx, cy + Rb * 0.6);
+    ctx.restore();
+  }
+
+  function render(t) {
+    var w = cv.width, h = cv.height;
+    var b = breath(t), Rb = Math.min(w, h) * 0.18, mainR = Rb * (0.80 + 0.35 * b);
+    var cx = w / 2, cy = h / 2, blur = Math.max(2, Rb * 0.16);
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over';
+    var bgr = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 0.75);
+    bgr.addColorStop(0, GEL.bg0); bgr.addColorStop(1, GEL.bg1); ctx.fillStyle = bgr; ctx.fillRect(0, 0, w, h);
+
+    sctx.setTransform(1, 0, 0, 1, 0, 0); sctx.globalCompositeOperation = 'source-over'; sctx.clearRect(0, 0, w, h);
+    sctx.filter = 'blur(' + blur + 'px)'; sctx.fillStyle = '#fff';
+    sctx.beginPath();
+    var N = 70;
+    for (var i = 0; i <= N; i++) {
+      var ang = i / N * Math.PI * 2;
+      var wob = 1 + 0.05 * Math.sin(ang * 3 + t * 1.1) + 0.035 * Math.sin(ang * 5 - t * 0.8);
+      var rr = mainR * wob, x = cx + Math.cos(ang) * rr, y = cy + Math.sin(ang) * rr;
+      if (i === 0) sctx.moveTo(x, y); else sctx.lineTo(x, y);
+    }
+    sctx.closePath(); sctx.fill();
+    for (var k = 0; k < particles.length; k++) { var pt = particles[k]; sctx.beginPath(); sctx.arc(pt.x, pt.y, pt.r, 0, 7); sctx.fill(); }
+    sctx.filter = 'none';
+
+    mctx.setTransform(1, 0, 0, 1, 0, 0); mctx.globalCompositeOperation = 'source-over'; mctx.clearRect(0, 0, w, h);
+    for (var a = 0; a < 5; a++) mctx.drawImage(soft, 0, 0);
+
+    cctx.setTransform(1, 0, 0, 1, 0, 0); cctx.globalCompositeOperation = 'source-over'; cctx.clearRect(0, 0, w, h);
+    var grad = cctx.createRadialGradient(cx - mainR * 0.30, cy - mainR * 0.38, mainR * 0.1, cx, cy, mainR * 1.25);
+    for (var s = 0; s < GEL.stops.length; s++) grad.addColorStop(GEL.stops[s][0], GEL.stops[s][1]);
+    cctx.fillStyle = grad; cctx.fillRect(0, 0, w, h);
+    cctx.globalCompositeOperation = 'lighter';
+    var gl = cctx.createRadialGradient(cx - mainR * 0.34, cy - mainR * 0.44, 0, cx - mainR * 0.34, cy - mainR * 0.44, mainR * 0.8);
+    gl.addColorStop(0, 'rgba(' + GEL.gloss + ',0.55)'); gl.addColorStop(0.4, 'rgba(' + GEL.gloss + ',0.10)'); gl.addColorStop(1, 'rgba(' + GEL.gloss + ',0)');
+    cctx.fillStyle = gl; cctx.fillRect(0, 0, w, h);
+    cctx.globalCompositeOperation = 'source-over';
+    var sh = cctx.createRadialGradient(cx + mainR * 0.15, cy + mainR * 0.5, 0, cx + mainR * 0.15, cy + mainR * 0.5, mainR * 0.95);
+    sh.addColorStop(0, 'rgba(0,0,0,0.30)'); sh.addColorStop(1, 'rgba(0,0,0,0)'); cctx.fillStyle = sh; cctx.fillRect(0, 0, w, h);
+    cctx.globalCompositeOperation = 'destination-in'; cctx.drawImage(mask, 0, 0); cctx.globalCompositeOperation = 'source-over';
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(' + GEL.glow + ',' + (0.35 + 0.30 * b) + ')'; ctx.shadowBlur = Rb * 0.6 * (0.8 + 0.5 * b);
+    ctx.drawImage(col, 0, 0); ctx.restore();
+
+    if (state === 'sit') drawTimer(cx, cy, Rb, t, b);
+  }
+
+  var last = null;
+  function loop(ms) {
+    var t = ms / 1000;
+    if (last == null) last = ms;
+    var dt = (ms - last) / 1000; if (dt > 0.05) dt = 0.05; last = ms;
+    updateSim(dt, t); render(t);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  // ---------------- setup UI wiring ----------------
+  var practiceChips = $('practiceChips'), durChips = $('durChips'), durValEl = $('durVal');
+  function syncDur() {
+    durValEl.textContent = durationMin;
+    Array.prototype.forEach.call(durChips.children, function (c) {
+      c.classList.toggle('active', parseInt(c.getAttribute('data-min'), 10) === durationMin);
+    });
+  }
+  practiceChips.addEventListener('click', function (e) {
+    var btn = e.target.closest('.chip'); if (!btn) return;
+    var val = btn.getAttribute('data-practice');
+    if (practice === val) { practice = ''; btn.classList.remove('active'); }
+    else {
+      practice = val;
+      Array.prototype.forEach.call(practiceChips.children, function (c) { c.classList.remove('active'); });
+      btn.classList.add('active');
+    }
+  });
+  durChips.addEventListener('click', function (e) {
+    var btn = e.target.closest('.chip'); if (!btn) return;
+    durationMin = parseInt(btn.getAttribute('data-min'), 10); syncDur();
+  });
+  $('durMinus').addEventListener('click', function () { durationMin = Math.max(1, durationMin - 1); syncDur(); });
+  $('durPlus').addEventListener('click', function () { durationMin = Math.min(180, durationMin + 1); syncDur(); });
+
+  var volEl = $('vol'), vicon = $('vicon');
+  volEl.addEventListener('input', function () { volume = parseFloat(volEl.value); vicon.textContent = volume === 0 ? '🔇' : (volume < 0.5 ? '🔉' : '🔊'); });
+
+  var gongChips = $('gongChips');
+  gongChips.addEventListener('click', function (e) {
+    var btn = e.target.closest('.chip'); if (!btn) return;
+    gongSize = btn.getAttribute('data-gong');
+    Array.prototype.forEach.call(gongChips.children, function (c) { c.classList.remove('active'); });
+    btn.classList.add('active');
+    volume = parseFloat(volEl.value);
+    playGongNow(); // preview the chosen size on tap
+  });
+
+  $('testGong').addEventListener('click', function () { volume = parseFloat(volEl.value); playGongNow(); });
+
+  $('beginBtn').addEventListener('click', function () {
+    volume = parseFloat(volEl.value);
+    ensureAudio();
+    plannedMs = durationMin * 60000;
+    sitStart = performance.now();
+    scheduleGong(plannedMs / 1000);
+    requestWake();
+    show('sit');
+  });
+  $('endBtn').addEventListener('click', function () {
+    totalMs = performance.now() - sitStart;
+    cancelGong();
+    releaseWake();
+    $('totalTime').textContent = fmt(totalMs);
+    show('complete');
+  });
+  $('againBtn').addEventListener('click', function () { show('setup'); });
+
+  // sunflower easter egg: spin + flip the greeting (no theme change — Mastishka stays dark)
+  var greetings = ['Mettā to you', 'Be happy :)'], gi = 0;
+  var sunflower = $('sunflower'), greeting = $('greeting');
+  sunflower.addEventListener('click', function () {
+    gi = (gi + 1) % greetings.length;
+    greeting.textContent = greetings[gi];
+    sunflower.classList.remove('spin'); void sunflower.offsetWidth; sunflower.classList.add('spin');
+  });
+  sunflower.addEventListener('animationend', function () { sunflower.classList.remove('spin'); });
+
+  syncDur();
+})();
+</script>
+</body>
+</html>
