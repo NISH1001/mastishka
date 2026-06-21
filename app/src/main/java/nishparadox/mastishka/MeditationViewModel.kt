@@ -2,7 +2,6 @@ package nishparadox.mastishka
 
 import android.app.Application
 import android.content.Context
-import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.net.Uri
@@ -24,6 +23,8 @@ import nishparadox.mastishka.data.exportJson
 import nishparadox.mastishka.data.parseBackup
 import nishparadox.mastishka.health.HealthConnectManager
 import nishparadox.mastishka.service.TimerService
+import nishparadox.mastishka.service.gongAudioAttributes
+import nishparadox.mastishka.service.headphonesConnected
 import androidx.health.connect.client.HealthConnectClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -341,20 +342,17 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
     /** Play the gong once at the current volume so the user can set the level before sitting. */
     fun testGong() {
         stopTestGong()
+        // Mirror TimerService.playGong(): media usage on headphones (so the test reaches the ears),
+        // otherwise the alarm stream (and max its volume only while playing).
+        val am = getApplication<Application>().getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val onHeadphones = headphonesConnected(am)
         val player = MediaPlayer().apply {
-            setAudioAttributes(
-                AudioAttributes.Builder()
-                    // Alarm channel — see TimerService.playGong() for the rationale (rings through
-                    // DND; raiseAlarmVolume() maxes the alarm stream only while it plays).
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-            )
+            setAudioAttributes(gongAudioAttributes(onHeadphones))
         }
         val afd = getApplication<Application>().resources.openRawResourceFd(gongType.rawResId) ?: return
         afd.use { player.setDataSource(it.fileDescriptor, it.startOffset, it.length) }
         player.setVolume(gongVolume, gongVolume)
-        player.setOnPreparedListener { raiseAlarmVolume(); it.start() }
+        player.setOnPreparedListener { if (!onHeadphones) raiseAlarmVolume(); it.start() }
         player.setOnCompletionListener { stopTestGong() }
         player.prepareAsync()
         testPlayer = player
