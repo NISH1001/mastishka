@@ -2,6 +2,10 @@
 
 A barebones Android app for Vipassana meditation sits.
 
+> **🌐 Try it in your browser — no install:** **[nishparadox.com/mastishka](https://nishparadox.com/mastishka/)**
+> A minimal web version of the sit — a breathing orb, the gong that rings without interrupting,
+> and overtime that keeps counting. Nothing is saved; just open the link and sit.
+
 - **Sit timer** — set a duration; at zero the **gong rings without interrupting you**, and the
   timer keeps counting *overtime* so you know exactly how much longer you sat.
 - **Gong volume** and **gong sound** (Small / Medium / Large — default Medium) are set before
@@ -106,4 +110,5 @@ app/src/main/java/nishparadox/mastishka/
   ui/Theme.kt                  # Compose Material3 theme
 app/src/main/res/raw/gong_{small,medium,large}.ogg  # synthesized gongs (default: medium)
 scripts/generate_gong.py       # bell/gong additive synthesis, 3 sizes (needs ffmpeg for OGG)
+docs/index.html                # standalone minimal web version (GitHub Pages → nishparadox.com/mastishka)
 ```
