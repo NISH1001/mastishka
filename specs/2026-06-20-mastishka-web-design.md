@@ -69,7 +69,8 @@ The web version deliberately strips all of that away.
   timer. No logic attached (nothing is saved).
 - Duration: preset chips **10 / 20 / 30 / 45 / 60 min** plus a compact **− / +** stepper for
   any custom length.
-- Gong volume control (slider + mute), default level comparable to the app.
+- Gong: a **Small / Medium / Large** picker (default Medium, like the app) and a volume
+  slider; tapping a size or **Test** previews the bell.
 - A large **Begin sit** button. Tapping it is also the user gesture that unlocks/creates the
   AudioContext, so the gong can ring later.
 - A small **GitHub icon** in a corner linking to `https://github.com/NISH1001/mastishka`.
@@ -125,10 +126,11 @@ background.
   10 inharmonic partials `(ratio, amp, decay)`, per-partial exponential decay, a tiny
   per-partial detune for the struck-bell shimmer, and a ~25 ms high-frequency strike
   transient at onset; normalize to peak, apply a 0.5 s tail fade.
-- Default to the **medium** variant (fundamental 261 Hz, 6.5 s, decay_scale 1.0). (Small =
-  392 Hz/5.0 s/1.45, Large = 165 Hz/8.0 s/0.72 are available if a picker is ever wanted —
-  not in v1.)
-- Buffer is rendered once (on Begin, after the AudioContext is unlocked by the tap).
+- Three variants, selectable via the Small / Medium / Large picker (default **Medium**):
+  Small = 392 Hz / 5.0 s / decay 1.45, Medium = 261 Hz / 6.5 s / 1.0,
+  Large = 165 Hz / 8.0 s / 0.72.
+- Each variant's buffer is rendered once on first use (a size tap, Test, or Begin — after
+  the AudioContext is unlocked by the tap) and cached.
 - Volume applied via a `GainNode`; mute supported.
 
 ## Behavior details & edge cases
