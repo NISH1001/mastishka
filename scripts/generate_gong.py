@@ -18,6 +18,7 @@ import math
 import os
 import struct
 import subprocess
+import sys
 import tempfile
 import wave
 
@@ -66,7 +67,7 @@ def sample(t: float, fundamental: float, decay_scale: float) -> float:
     return value
 
 
-def render(out_path: str, fundamental: float, duration: float, decay_scale: float) -> None:
+def synthesize(fundamental: float, duration: float, decay_scale: float) -> bytes:
     n = int(SAMPLE_RATE * duration)
     raw = [sample(i / SAMPLE_RATE, fundamental, decay_scale) for i in range(n)]
     peak = max(abs(v) for v in raw) or 1.0
@@ -77,22 +78,39 @@ def render(out_path: str, fundamental: float, duration: float, decay_scale: floa
         fade = 1.0 if t < duration - 0.5 else max(0.0, (duration - t) / 0.5)
         s = (v / peak) * 0.92 * fade
         frames += struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767))
+    return bytes(frames)
 
-    # Synthesize to a temporary WAV, then transcode to OGG Vorbis with ffmpeg. Vorbis is a
-    # fully free codec (no MP3/AAC patent concerns) and is what ships in res/raw.
+
+def write_wav(path: str, frames: bytes) -> None:
+    with wave.open(path, "w") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(SAMPLE_RATE)
+        w.writeframes(frames)
+
+
+def render(out_path: str, fundamental: float, duration: float, decay_scale: float) -> None:
+    frames = synthesize(fundamental, duration, decay_scale)
+
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         wav_path = tmp.name
     try:
-        with wave.open(wav_path, "w") as w:
-            w.setnchannels(1)
-            w.setsampwidth(2)
-            w.setframerate(SAMPLE_RATE)
-            w.writeframes(bytes(frames))
-        subprocess.run(
-            ["ffmpeg", "-v", "error", "-y", "-i", wav_path,
-             "-c:a", "libvorbis", "-q:a", OGG_QUALITY, out_path],
-            check=True,
-        )
+        write_wav(wav_path, frames)
+        if out_path.endswith(".m4a"):
+            # AAC via macOS-native afconvert (AVFoundation can't decode Ogg Vorbis, so the
+            # Mac app ships m4a renders of the same synthesis).
+            subprocess.run(
+                ["afconvert", "-f", "m4af", "-d", "aac", "-b", "96000", wav_path, out_path],
+                check=True,
+            )
+        else:
+            # OGG Vorbis with ffmpeg: a fully free codec (no MP3/AAC patent concerns),
+            # and what ships in the Android res/raw.
+            subprocess.run(
+                ["ffmpeg", "-v", "error", "-y", "-i", wav_path,
+                 "-c:a", "libvorbis", "-q:a", OGG_QUALITY, out_path],
+                check=True,
+            )
     finally:
         os.remove(wav_path)
 
@@ -102,6 +120,16 @@ def render(out_path: str, fundamental: float, duration: float, decay_scale: floa
 
 def main() -> None:
     here = os.path.dirname(os.path.abspath(__file__))
+
+    # --m4a <out_dir>: render AAC for the macOS app instead of OGG for Android.
+    if len(sys.argv) >= 2 and sys.argv[1] == "--m4a":
+        out_dir = sys.argv[2] if len(sys.argv) > 2 else os.path.normpath(
+            os.path.join(here, "..", "macos", "Sources", "Mastishka", "Resources"))
+        os.makedirs(out_dir, exist_ok=True)
+        for name, (fundamental, duration, decay_scale) in VARIANTS.items():
+            render(os.path.join(out_dir, f"{name}.m4a"), fundamental, duration, decay_scale)
+        return
+
     out_dir = os.path.normpath(os.path.join(here, "..", "app", "src", "main", "res", "raw"))
     os.makedirs(out_dir, exist_ok=True)
 
