@@ -34,7 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
         menu.addItem(NSMenuItem(title: "Mastishka v\(version)", action: nil, keyEquivalent: ""))
         menu.addItem(.separator())
-        for minutes in [5, 10, 15, 20, 30, 45, 60] {
+        for minutes in [1, 2, 5, 10, 15, 20, 30, 45, 60] {
             let item = NSMenuItem(title: "Sit \(minutes) min", action: #selector(beginSit(_:)), keyEquivalent: "")
             item.target = self
             item.tag = minutes
