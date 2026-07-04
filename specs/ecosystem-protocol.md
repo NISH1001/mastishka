@@ -173,12 +173,13 @@ are moved by Google's own clients:
   data root as: user override → glob `GoogleDrive-*/My Drive/nishparadox/<app>` →
   local Application Support fallback. Beware dataless "online-only" placeholder
   files: reads must fail soft.
-- **Android:** the Drive app exposes no filesystem folder, so apps use the SAF
-  document picker: the user picks the target file/folder in Drive **once**, the
-  app calls `takePersistableUriPermission` and thereafter rewrites its own
-  file after every change (fail soft → re-prompt if the permission was revoked).
-  Import = manual pick. Full automation option: a folder-mirror app (e.g.
-  Autosync) mirroring a local folder ↔ Drive; the app just uses local files.
+- **Android:** the Drive app exposes no filesystem path, but its provider
+  supports SAF **folder grants** (`OPEN_DOCUMENT_TREE`): the user grants the
+  app-level folder (`nishparadox/mastishka`) **once**; the app persists the
+  permission, finds/creates `sits/` inside, rewrites its own device file after
+  every change, and auto-discovers every other device's jsonl (present and
+  future) on each history open — merging new sits by the `startedAt` dedupe.
+  Fail soft → re-prompt if the permission was revoked.
 
 ## 5. Event streams (future convention, not yet implemented)
 

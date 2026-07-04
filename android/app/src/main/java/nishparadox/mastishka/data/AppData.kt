@@ -63,6 +63,10 @@ data class Session(
     val hrMin: Int = 0,
     val hrMax: Int = 0,
     val hrSeries: String = "", // comma-separated downsampled bpm for a sparkline
+    // Which device the sit happened on: "" = this phone; otherwise a linked device's id
+    // (from its sit file's name, e.g. "mac-m3-max-16a484"). Not part of the schema-1 JSON —
+    // in the shared folder the filename carries device identity.
+    val device: String = "",
 ) {
     val overtimeMillis: Long get() = (totalMillis - plannedMillis).coerceAtLeast(0)
     val hasHeartRate: Boolean get() = hrAvg > 0
@@ -118,7 +122,7 @@ interface SessionDao {
 
 // ---------- Database ----------
 
-@Database(entities = [Person::class, Session::class], version = 3, exportSchema = false)
+@Database(entities = [Person::class, Session::class], version = 4, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun personDao(): PersonDao
@@ -144,13 +148,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // v4 adds Session.device for multi-device history ("" = this phone).
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sessions ADD COLUMN device TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "mastishka.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
             }
     }
 }
@@ -250,5 +261,19 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setSyncUri(uri: String) {
         context.dataStore.edit { it[keySyncUri] = uri }
+    }
+
+    /**
+     * Tree URI of the one folder grant: `Drive/nishparadox/mastishka`. Everything inside is
+     * automatic from there — the app finds/creates `sits/`, writes its own device file, and
+     * discovers every other device's file without further picking. Empty = not set up.
+     */
+    private val keyDriveRoot = stringPreferencesKey("drive_root_uri")
+
+    val driveRoot: Flow<String> =
+        context.dataStore.data.map { it[keyDriveRoot] ?: "" }
+
+    suspend fun setDriveRoot(uri: String) {
+        context.dataStore.edit { it[keyDriveRoot] = uri }
     }
 }
