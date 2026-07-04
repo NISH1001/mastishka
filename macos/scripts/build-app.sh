@@ -12,6 +12,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/Mastishka "$APP/Contents/MacOS/Mastishka"
 # SwiftPM resource bundle (the gong m4a renders) must ship inside the app.
 cp -R .build/release/mastishka_Mastishka.bundle "$APP/Contents/Resources/"
+# App icon (◎ on the night gradient — regenerate with ../scripts/generate_mac_icon.py).
+cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 VERSION=$(awk -F= '/^versionName=/{gsub(/[ \r]/,""); print $2}' version.properties)
 BUILD_NUM=$(git rev-list --count HEAD 2>/dev/null || echo 0)
@@ -34,6 +36,8 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <string>${VERSION}</string>
     <key>CFBundleVersion</key>
     <string>${BUILD_NUM}</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>

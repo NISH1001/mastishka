@@ -4,6 +4,13 @@ A deliberately minimal menu-bar sit companion (Swift 6 + SwiftUI, SwiftPM, **no 
 required** — Command Line Tools only). It does three things: hear the doorbell, run a sit,
 write the line.
 
+<img src="../docs/screenshots/mac-menu.png" width="300" alt="Mastishka ◎ in the menu bar — Sit 5–60 min, Open sits folder" />
+
+Built as a companion to **[vishrama](https://github.com/NISH1001/vishrama)** (the same
+author's macOS break reminder): when a long break says *Anapana*, vishrama opens the
+`mastishka://sit` URL below and this app runs — and tracks — the sit, so vishrama never
+grows meditation features of its own.
+
 - **Menu bar ◎** → *Sit N min*. The sit window: night gradient, mint breathing orb
   (10 s raised-cosine breath), countdown → **gong once at zero without interrupting** →
   overtime counts up → calmness + optional note → save.
