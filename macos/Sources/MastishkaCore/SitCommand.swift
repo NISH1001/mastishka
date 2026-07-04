@@ -7,12 +7,15 @@ public struct SitCommand: Sendable, Equatable {
     public let minutes: Int?
     public let autostart: Bool
     public let source: String?
+    /// The sender's own words, shown on the sit screen (e.g. vishrama's break prompt).
+    public let prompt: String?
 
-    public init(practice: String?, minutes: Int?, autostart: Bool, source: String?) {
+    public init(practice: String?, minutes: Int?, autostart: Bool, source: String?, prompt: String?) {
         self.practice = practice
         self.minutes = minutes
         self.autostart = autostart
         self.source = source
+        self.prompt = prompt
     }
 
     public init?(url: URL) {
@@ -22,11 +25,13 @@ public struct SitCommand: Sendable, Equatable {
             items.first(where: { $0.name == name })?.value
         }
         let parsedMinutes = value("minutes").flatMap(Int.init)
+        let prompt = value("prompt")?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.init(
             practice: value("practice")?.lowercased(),
             minutes: (parsedMinutes ?? 0) > 0 ? parsedMinutes : nil,
             autostart: value("autostart") == "1",
-            source: value("source")
+            source: value("source"),
+            prompt: (prompt?.isEmpty ?? true) ? nil : prompt
         )
     }
 }

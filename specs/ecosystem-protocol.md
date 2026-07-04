@@ -39,6 +39,9 @@ mastishka://sit?practice=<slug>&minutes=<int>&autostart=0|1&source=<app>
 - `autostart=1`: skip setup, start the countdown immediately.
 - `source`: sender's short name (e.g. `vishrama`). Presence of a known source
   is what arms the completion callback.
+- `prompt`: percent-encoded free text, the sender's own words shown on the sit
+  screen (e.g. vishrama's break prompt "Anapana — observe your breath").
+  Blank → treated as absent. Display-only; never stored in the sit record.
 - A command received **while a sit is running is ignored** — nothing may
   interrupt a live sit.
 

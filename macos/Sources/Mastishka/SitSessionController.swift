@@ -16,6 +16,8 @@ final class SitSessionController: NSObject, ObservableObject, NSWindowDelegate {
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var timer = SitTimer(startedAtEpochMs: 0, plannedMillis: 0)
     @Published private(set) var practice = "Meditation"
+    /// The sender's words (URL `prompt` param), shown under the practice label; nil for menu sits.
+    @Published private(set) var prompt: String?
 
     private var window: NSWindow?
     private var tick: Timer?
@@ -24,12 +26,13 @@ final class SitSessionController: NSObject, ObservableObject, NSWindowDelegate {
     private let sleepless = PowerAssertion()
 
     /// Begin a sit now. Ignored if one is already running — nothing interrupts a live sit.
-    func start(minutes: Int, practice: String) {
+    func start(minutes: Int, practice: String, prompt: String? = nil) {
         guard phase == .idle else {
             window?.makeKeyAndOrderFront(nil)
             return
         }
         self.practice = practice
+        self.prompt = prompt
         startedAt = Date()
         timer = SitTimer(
             startedAtEpochMs: Int64(startedAt.timeIntervalSince1970 * 1000),
