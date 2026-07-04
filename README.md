@@ -7,7 +7,7 @@ you**, and the timer keeps counting **overtime** so you know exactly how much lo
 
 | Platform | Where | What |
 |---|---|---|
-| **Android** | [`android/`](android/) · releases tagged `v*` | The full app: sit timer, practice types, metta, notes, heart rate via Health Connect, history, Drive sync |
+| **Android** | [`android/`](android/) · releases tagged `v*` | The full app: sit timer, practice types, metta, notes, heart rate via Health Connect, multi-device history with device filter, automatic Drive sync |
 | **macOS** | [`macos/`](macos/) · releases tagged `mac-v*` | Minimal menu-bar companion: breathing orb sit, gong, overtime, saves to the shared Drive folder; `mastishka://sit` URL scheme |
 | **Web** | [`docs/`](docs/) → **[nishparadox.com/mastishka](https://nishparadox.com/mastishka/)** | A transient sit in the browser — nothing saved, just open and sit |
 
@@ -24,10 +24,12 @@ Google Drive/nishparadox/mastishka/sits/
 ```
 
 One line = one sit (time, durations, practice, calmness, notes, metta people, heart data).
-Each device appends only to its own file — conflict-free by construction — and every reader
-shows the union, deduped by start time. The same protocol defines the `mastishka://sit`
-URL scheme so companion apps (like [vishrama](https://github.com/NISH1001/vishrama)) can
-trigger a tracked sit.
+Each device writes only its own file — conflict-free by construction — and every reader
+shows the union, deduped by start time. On Android this is **one folder grant, then
+automatic**: other devices' sits appear on their own (filterable by device chips), flow
+into Health Connect, and get enriched with your band's heart rate by time-correlation.
+The same protocol defines the `mastishka://sit` URL scheme so companion apps (like
+[vishrama](https://github.com/NISH1001/vishrama)) can trigger a tracked sit.
 
 ## Screenshots (Android)
 
