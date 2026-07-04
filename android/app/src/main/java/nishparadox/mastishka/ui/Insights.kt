@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -41,13 +42,12 @@ import androidx.compose.ui.unit.sp
 import nishparadox.mastishka.data.Bucket
 import nishparadox.mastishka.data.Granularity
 import nishparadox.mastishka.data.Session
-import nishparadox.mastishka.data.calmnessHrGap
 import nishparadox.mastishka.data.currentStreakDays
 import nishparadox.mastishka.data.medianSeries
 import nishparadox.mastishka.data.minutesPerDay
 import nishparadox.mastishka.data.parseHrSeries
 import nishparadox.mastishka.data.resample
-import nishparadox.mastishka.data.rollingMean
+import nishparadox.mastishka.data.calmnessHrGap
 import nishparadox.mastishka.data.settleFraction
 import java.time.DayOfWeek
 import java.time.Instant
@@ -107,8 +107,8 @@ fun InsightsTab(
             }
         }
         if (calm.size >= 2) {
-            ChartCard("Calmness", "post-sit check, smoothed") {
-                DotTrend(calm)
+            ChartCard("Calmness", "your rated sits in this range") {
+                CalmnessBar(calm)
                 calmnessHrGap(filtered)?.let { gap ->
                     Text(
                         if (gap > 0) "Sits you rate higher run ≈$gap bpm lower."
@@ -409,41 +409,47 @@ private fun SeriesOverlay(sits: List<Session>) {
     }
 }
 
-// ---------------------------------------------------------------- calmness trend
+// ---------------------------------------------------------------- calmness shares
 
+/** One range-wide proportional bar: how the rated sits split lower / neutral / higher.
+ *  Ordinal data, so one hue at three strengths (bright = higher). No time axis — with only
+ *  three levels and sparse ratings, distribution beats trend. */
 @Composable
-private fun DotTrend(sits: List<Session>) {
+private fun CalmnessBar(rated: List<Session>) {
     val mint = MaterialTheme.colorScheme.primary
-    val muted = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
-    val hair = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
-    val measurer = rememberTextMeasurer()
-    val smoothed = remember(sits) { rollingMean(sits.map { it.calmness }, window = 5) }
+    val higherColor = mint
+    val neutralColor = mint.copy(alpha = 0.45f)
+    val lowerColor = mint.copy(alpha = 0.16f)
 
-    Canvas(Modifier.fillMaxWidth().height(130.dp)) {
-        val plotH = size.height
-        val maxVal = sits.maxOf { it.calmness }.coerceAtLeast(3)
-        val t0 = sits.first().startedAt
-        val t1 = sits.last().startedAt.coerceAtLeast(t0 + 1)
-        // Inset the dot bands so the higher/lower labels own their own space.
-        val topInset = 18.dp.toPx()
-        val bottomInset = 20.dp.toPx()
-        fun x(t: Long) = (t - t0).toFloat() / (t1 - t0) * size.width
-        fun y(v: Float) = plotH - bottomInset - (v - 1f) / (maxVal - 1f) * (plotH - topInset - bottomInset)
+    val lower = rated.count { it.calmness == 1 }
+    val neutral = rated.count { it.calmness == 2 }
+    val higher = rated.count { it.calmness >= 3 }
+    val total = (lower + neutral + higher).coerceAtLeast(1)
 
-        hairline(hair, plotH - 1f)
-
-        sits.forEach { s ->
-            drawCircle(mint.copy(alpha = 0.55f), radius = 3.dp.toPx(), center = Offset(x(s.startedAt), y(s.calmness.toFloat())))
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        listOf(higherColor to higher, neutralColor to neutral, lowerColor to lower).forEach { (color, count) ->
+            if (count > 0) {
+                Surface(
+                    color = color,
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.weight(count.toFloat()).fillMaxWidth(),
+                ) {}
+            }
         }
-        val path = Path()
-        sits.forEachIndexed { i, s ->
-            val yy = y(smoothed[i])
-            if (i == 0) path.moveTo(x(s.startedAt), yy) else path.lineTo(x(s.startedAt), yy)
-        }
-        drawPath(path, mint, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-
-        mutedLabel(measurer, "higher", muted, 0f, 0f)
-        mutedLabel(measurer, "lower", muted, 0f, plotH - 15.dp.toPx())
+    }
+    Row(
+        Modifier.padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LegendDot(higherColor, "higher ${higher * 100 / total}%")
+        LegendDot(neutralColor, "neutral ${neutral * 100 / total}%")
+        LegendDot(lowerColor, "lower ${lower * 100 / total}%")
     }
 }
 
@@ -469,12 +475,17 @@ private fun CalendarHeatmap(minutes: Map<LocalDate, Int>, from: LocalDate, to: L
     Row(Modifier.horizontalScroll(rememberScrollState())) {
         Canvas(
             Modifier
-                .width((cell + gap) * weeks.size + 24.dp)
+                .width((cell + gap) * weeks.size + 44.dp)
                 .height((cell + gap) * 7 + 16.dp)
         ) {
             val cellPx = cell.toPx()
             val gapPx = gap.toPx()
             val topPad = 14.dp.toPx()
+            val leftPad = 20.dp.toPx()
+            // Weekday guide: columns are weeks, rows are days.
+            for ((dow, label) in listOf(0 to "M", 2 to "W", 4 to "F")) {
+                mutedLabel(measurer, label, muted, 0f, topPad + dow * (cellPx + gapPx))
+            }
             var lastMonth = -1
             weeks.forEachIndexed { col, weekStart ->
                 // Month label above the first week of each month.
@@ -483,7 +494,7 @@ private fun CalendarHeatmap(minutes: Map<LocalDate, Int>, from: LocalDate, to: L
                     mutedLabel(
                         measurer,
                         DateTimeFormatter.ofPattern("MMM").format(weekStart),
-                        muted, col * (cellPx + gapPx), 0f,
+                        muted, leftPad + col * (cellPx + gapPx), 0f,
                     )
                 }
                 for (dow in 0 until 7) {
@@ -496,12 +507,39 @@ private fun CalendarHeatmap(minutes: Map<LocalDate, Int>, from: LocalDate, to: L
                     }
                     drawRoundRect(
                         color,
-                        topLeft = Offset(col * (cellPx + gapPx), topPad + dow * (cellPx + gapPx)),
+                        topLeft = Offset(leftPad + col * (cellPx + gapPx), topPad + dow * (cellPx + gapPx)),
                         size = Size(cellPx, cellPx),
                         cornerRadius = CornerRadius(3.dp.toPx()),
                     )
                 }
             }
         }
+    }
+    // Color key: how bright maps to minutes (brightest = the biggest day in range).
+    Row(
+        Modifier.padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "0m",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+        )
+        Spacer(Modifier.width(2.dp))
+        Surface(color = empty, shape = RoundedCornerShape(3.dp), modifier = Modifier.size(12.dp)) {}
+        listOf(0.25f, 0.5f, 0.75f, 1f).forEach { level ->
+            Surface(
+                color = mint.copy(alpha = 0.25f + 0.75f * level),
+                shape = RoundedCornerShape(3.dp),
+                modifier = Modifier.size(12.dp),
+            ) {}
+        }
+        Spacer(Modifier.width(2.dp))
+        Text(
+            "${maxMinutes}m",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+        )
     }
 }
