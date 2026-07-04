@@ -21,7 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let command = SitCommand(url: url) else { continue }
             session.start(
                 minutes: command.minutes ?? 10,
-                practice: displayName(forSlug: command.practice)
+                practice: displayName(forSlug: command.practice),
+                prompt: command.prompt
             )
             return
         }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthesize meditation gong/bell tones into app/src/main/res/raw/.
+"""Synthesize meditation gong/bell tones into android/app/src/main/res/raw/.
 
 Pure standard-library additive synthesis (no numpy): a set of inharmonic partials with
 per-partial exponential decay produces a bell-like timbre. Higher partials decay faster (as
@@ -130,7 +130,7 @@ def main() -> None:
             render(os.path.join(out_dir, f"{name}.m4a"), fundamental, duration, decay_scale)
         return
 
-    out_dir = os.path.normpath(os.path.join(here, "..", "app", "src", "main", "res", "raw"))
+    out_dir = os.path.normpath(os.path.join(here, "..", "android", "app", "src", "main", "res", "raw"))
     os.makedirs(out_dir, exist_ok=True)
 
     # Remove the old single-gong file if present (replaced by sized variants).

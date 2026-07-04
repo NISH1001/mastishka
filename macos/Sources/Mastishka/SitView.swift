@@ -45,6 +45,15 @@ struct SitView: View {
                     .tracking(3.5)
                     .foregroundStyle(Palette.ink.opacity(0.5))
                     .padding(.top, 22)
+                // The sender's own words (mastishka://sit&prompt=…), serif like the artifact.
+                if let prompt = session.prompt {
+                    Text(prompt)
+                        .font(.system(size: 24, design: .serif))
+                        .foregroundStyle(Palette.ink.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 460)
+                        .padding(.top, 22)
+                }
                 Spacer()
                 if session.phase == .review {
                     reviewControls
