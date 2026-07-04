@@ -13,7 +13,7 @@ cp .build/release/Mastishka "$APP/Contents/MacOS/Mastishka"
 # SwiftPM resource bundle (the gong m4a renders) must ship inside the app.
 cp -R .build/release/mastishka_Mastishka.bundle "$APP/Contents/Resources/"
 
-VERSION=$(awk -F= '/^versionName=/{gsub(/[ \r]/,""); print $2}' ../version.properties)
+VERSION=$(awk -F= '/^versionName=/{gsub(/[ \r]/,""); print $2}' version.properties)
 BUILD_NUM=$(git rev-list --count HEAD 2>/dev/null || echo 0)
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
