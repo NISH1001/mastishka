@@ -24,6 +24,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import nishparadox.mastishka.R
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /** Selectable gong sounds, each backed by a synthesized clip in res/raw. */
@@ -220,5 +221,34 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setNepaliTitle(enabled: Boolean) {
         context.dataStore.edit { it[keyNepaliTitle] = enabled }
+    }
+
+    // ---------- Drive sync (specs/ecosystem-protocol.md §3–4) ----------
+
+    private val keyDeviceId = stringPreferencesKey("device_id")
+    private val keySyncUri = stringPreferencesKey("sync_uri")
+
+    /**
+     * Stable per-device id naming this device's sit file (`sits/<id>.jsonl`). Generated once —
+     * model slug + 6 chars of ANDROID_ID — then persisted and never recomputed, so the filename
+     * never changes out from under the synced folder.
+     */
+    suspend fun deviceId(): String {
+        context.dataStore.data.first()[keyDeviceId]?.let { return it }
+        val model = android.os.Build.MODEL.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+        val suffix = android.provider.Settings.Secure.getString(
+            context.contentResolver, android.provider.Settings.Secure.ANDROID_ID
+        )?.take(6) ?: "0"
+        val id = "$model-$suffix"
+        context.dataStore.edit { it[keyDeviceId] = id }
+        return id
+    }
+
+    /** Persisted SAF URI of this device's sit file in Drive; empty = sync not set up. */
+    val syncUri: Flow<String> =
+        context.dataStore.data.map { it[keySyncUri] ?: "" }
+
+    suspend fun setSyncUri(uri: String) {
+        context.dataStore.edit { it[keySyncUri] = uri }
     }
 }

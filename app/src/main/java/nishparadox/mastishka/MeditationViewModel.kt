@@ -20,7 +20,8 @@ import nishparadox.mastishka.data.Person
 import nishparadox.mastishka.data.Session
 import nishparadox.mastishka.data.SettingsStore
 import nishparadox.mastishka.data.exportJson
-import nishparadox.mastishka.data.parseBackup
+import nishparadox.mastishka.data.exportSitLines
+import nishparadox.mastishka.data.parseHistoryFile
 import nishparadox.mastishka.health.HealthConnectManager
 import nishparadox.mastishka.service.TimerService
 import nishparadox.mastishka.service.gongAudioAttributes
@@ -59,6 +60,14 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
     // Title heading language: true = Nepali (मस्तिष्क), false = English (Mastishka).
     var nepaliTitle by mutableStateOf(true)
         private set
+    // Drive sync: URI of this device's sits/<device>.jsonl; empty = not set up.
+    var syncUri by mutableStateOf("")
+        private set
+    val syncEnabled: Boolean get() = syncUri.isNotEmpty()
+    // Stable device id naming this device's sit file (pixel-9-1a2b3c); loaded in init.
+    var deviceId by mutableStateOf("")
+        private set
+    val syncFileName: String get() = "$deviceId.jsonl"
 
     // People selected for the current sit's metta (reset after saving).
     val selectedPeople = mutableStateListOf<String>()
@@ -89,7 +98,55 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { meditationType = settings.meditationType.first() }
         viewModelScope.launch { monitorHeartRate = settings.monitorHeartRate.first() }
         viewModelScope.launch { nepaliTitle = settings.nepaliTitle.first() }
+        viewModelScope.launch { syncUri = settings.syncUri.first() }
+        viewModelScope.launch { deviceId = settings.deviceId() }
         refreshHealthConnect()
+    }
+
+    /**
+     * Remember [uri] as this device's sit file and write the full history to it now.
+     * Called with the result of a create-document picker; takes a persistable permission so
+     * every future sit can be written without asking again.
+     */
+    fun setupSync(uri: Uri, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            runCatching {
+                getApplication<Application>().contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            settings.setSyncUri(uri.toString())
+            syncUri = uri.toString()
+            onResult(writeSitLines())
+        }
+    }
+
+    fun disableSync() {
+        viewModelScope.launch {
+            settings.setSyncUri("")
+            syncUri = ""
+        }
+    }
+
+    /**
+     * Rewrite this device's sit file with its full history (single-writer, whole-file — see
+     * specs/ecosystem-protocol.md §3). Fails soft: sync must never break saving a sit.
+     */
+    private suspend fun writeSitLines(): Boolean {
+        val uriString = settings.syncUri.first()
+        if (uriString.isEmpty()) return false
+        return runCatching {
+            val text = exportSitLines(sessions.first())
+            withContext(Dispatchers.IO) {
+                val resolver = getApplication<Application>().contentResolver
+                // "wt" truncates: shorter content (after a deletion) must not leave stale bytes.
+                resolver.openOutputStream(Uri.parse(uriString), "wt")
+                    ?.use { it.write(text.toByteArray()) }
+                    ?: error("Could not open sync file")
+            }
+        }.isSuccess
     }
 
     fun toggleNepaliTitle() {
@@ -206,6 +263,7 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
                         ?.let { db.sessionDao().updateHeartRate(id, it.avg, it.min, it.max, it.seriesCsv) }
                 }
             }
+            writeSitLines()
             selectedPeople.clear()
             lastSitHr = null
             TimerService.reset()
@@ -233,6 +291,7 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
                 summarize(health.readHeartRate(s.startedAt, s.startedAt + s.totalMillis))
                     ?.let { db.sessionDao().updateHeartRate(s.id, it.avg, it.min, it.max, it.seriesCsv) }
             }
+            writeSitLines()
             onResult(count)
         }
     }
@@ -251,13 +310,18 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
                     filled++
                 }
             }
+            // Late-arriving heart data must reach the Drive sit file too.
+            if (filled > 0) writeSitLines()
             onDone(filled)
         }
     }
 
     fun deleteSessions(ids: List<Long>) {
         if (ids.isEmpty()) return
-        viewModelScope.launch { db.sessionDao().deleteByIds(ids) }
+        viewModelScope.launch {
+            db.sessionDao().deleteByIds(ids)
+            writeSitLines()
+        }
     }
 
     /** Write every sit and person to [uri] as a JSON backup. Reports success on the main thread. */
@@ -280,8 +344,9 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Restore a backup from [uri], merging into existing history. Dedupes sits by start time
-     *  and people by name, so re-importing the same file is a no-op. */
+    /** Restore history from [uri] — a backup envelope or another device's sit-lines jsonl —
+     *  merging into existing history. Dedupes sits by start time and people by name, so
+     *  re-importing the same file is a no-op. */
     fun importData(uri: Uri, onResult: (ImportSummary) -> Unit) {
         viewModelScope.launch {
             val summary = runCatching {
@@ -290,7 +355,7 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
                     resolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
                         ?: error("Could not open file for reading")
                 }
-                val bundle = parseBackup(text)
+                val bundle = parseHistoryFile(text)
 
                 val existingStarts = db.sessionDao().allStartTimes().toSet()
                 val newSessions = bundle.sessions
@@ -306,6 +371,8 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
                         peopleAdded++
                     }
                 }
+
+                if (newSessions.isNotEmpty()) writeSitLines()
 
                 ImportSummary(
                     sessionsAdded = newSessions.size,

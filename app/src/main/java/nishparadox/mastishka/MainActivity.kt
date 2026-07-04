@@ -92,6 +92,10 @@ private fun App(vm: MeditationViewModel) {
             onRefreshHeartRate = { vm.backfillHeartRate() },
             onExport = vm::exportData,
             onImport = vm::importData,
+            syncEnabled = vm.syncEnabled,
+            syncFileName = vm.syncFileName,
+            onSetupSync = vm::setupSync,
+            onDisableSync = vm::disableSync,
         )
     }
 }

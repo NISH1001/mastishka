@@ -57,6 +57,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -693,6 +694,10 @@ fun HistoryScreen(
     onRefreshHeartRate: () -> Unit,
     onExport: (Uri, (Boolean) -> Unit) -> Unit,
     onImport: (Uri, (ImportSummary) -> Unit) -> Unit,
+    syncEnabled: Boolean,
+    syncFileName: String,
+    onSetupSync: (Uri, (Boolean) -> Unit) -> Unit,
+    onDisableSync: () -> Unit,
 ) {
     val context = LocalContext.current
     val selected = remember { mutableStateListOf<Long>() }
@@ -720,6 +725,20 @@ fun HistoryScreen(
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) pendingImport = uri }
+    // Drive sync setup: create this device's sits/<device>.jsonl once (ideally under
+    // Drive → nishparadox/mastishka/sits/); the app then rewrites it after every sit.
+    val syncLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        if (uri != null) onSetupSync(uri) { ok ->
+            Toast.makeText(
+                context,
+                if (ok) "Drive sync on — sits will be written to $syncFileName"
+                else "Couldn't write the sync file",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
 
     fun toggle(id: Long) {
         if (selected.contains(id)) selected.remove(id) else selected.add(id)
@@ -774,9 +793,37 @@ fun HistoryScreen(
                                 text = { Text("Import data…") },
                                 onClick = {
                                     menuOpen = false
-                                    importLauncher.launch(arrayOf("application/json"))
+                                    // */* so .jsonl sit files (no registered MIME; Drive often
+                                    // reports octet-stream) are pickable alongside .json backups.
+                                    importLauncher.launch(arrayOf("*/*"))
                                 },
                             )
+                            HorizontalDivider()
+                            if (syncEnabled) {
+                                DropdownMenuItem(
+                                    text = { Text("Change sync file…") },
+                                    onClick = {
+                                        menuOpen = false
+                                        syncLauncher.launch(syncFileName)
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Turn off Drive sync") },
+                                    onClick = {
+                                        menuOpen = false
+                                        onDisableSync()
+                                        Toast.makeText(context, "Drive sync off", Toast.LENGTH_SHORT).show()
+                                    },
+                                )
+                            } else {
+                                DropdownMenuItem(
+                                    text = { Text("Set up Drive sync…") },
+                                    onClick = {
+                                        menuOpen = false
+                                        syncLauncher.launch(syncFileName)
+                                    },
+                                )
+                            }
                         }
                     }
                 },
