@@ -12,3 +12,7 @@ local.properties
 *.apk
 .claude/
 .superpowers/
+
+# macOS app (SwiftPM)
+/macos/.build/
+/macos/dist/
