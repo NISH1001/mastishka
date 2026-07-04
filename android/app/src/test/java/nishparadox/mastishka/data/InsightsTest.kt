@@ -145,20 +145,46 @@ class InsightsTest {
     }
 
     @Test
-    fun `calmnessHrGap compares higher-rated and lower-rated sits`() {
+    fun `mindBodyAgreement counts per-sit matches against the bpm median`() {
+        val sessions = listOf(
+            // Baseline median bpm over HR sits: 60,70,80 → 70.
+            sit("2026-07-01").copy(calmness = 3, hrAvg = 60), // body calm + rated higher → match
+            sit("2026-07-02").copy(calmness = 1, hrAvg = 80), // body tense + rated lower → match
+            sit("2026-07-03").copy(calmness = 1, hrAvg = 60), // body calm + rated lower → mismatch
+            sit("2026-07-04").copy(calmness = 3, hrAvg = 70), // inside ±2 dead zone → skipped
+            sit("2026-07-05").copy(calmness = 2, hrAvg = 80), // neutral → no direction, skipped
+            sit("2026-07-06").copy(calmness = 3, hrAvg = 0),  // no heart data → skipped
+        )
+        val a = mindBodyAgreement(sessions)!!
+        assertEquals(2, a.matches)
+        assertEquals(3, a.total)
+        assertEquals(70, a.baselineBpm)
+    }
+
+    @Test
+    fun `mindBodyAgreement is null without enough clear-signal sits`() {
+        val sessions = listOf(
+            sit("2026-07-01").copy(calmness = 3, hrAvg = 60),
+            sit("2026-07-02").copy(calmness = 1, hrAvg = 80),
+        )
+        assertEquals(null, mindBodyAgreement(sessions))
+    }
+
+    @Test
+    fun `calmnessHrMeans averages bpm for lower-rated vs higher-rated sits`() {
         val sessions = listOf(
             sit("2026-07-01").copy(calmness = 1, hrAvg = 70),
             sit("2026-07-02").copy(calmness = 1, hrAvg = 68),
             sit("2026-07-03").copy(calmness = 3, hrAvg = 62),
             sit("2026-07-04").copy(calmness = 3, hrAvg = 64),
         )
-        assertEquals(6, calmnessHrGap(sessions))
+        assertEquals(69 to 63, calmnessHrMeans(sessions))
     }
 
     @Test
-    fun `calmnessHrGap needs both groups`() {
+    fun `calmnessHrMeans needs both groups`() {
         val sessions = listOf(sit("2026-07-01").copy(calmness = 3, hrAvg = 62))
-        assertEquals(null, calmnessHrGap(sessions))
+        assertEquals(null, calmnessHrMeans(sessions))
     }
 
     // ---------- heatmap ----------

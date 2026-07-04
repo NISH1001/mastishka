@@ -133,13 +133,46 @@ fun settleFraction(series: List<Int>): Float? {
 }
 
 /**
- * How many bpm lower the higher-rated sits run vs the lower-rated ones (positive = calmer
- * ratings coincide with a slower heart). Null unless both groups have heart data.
+ * Average sit bpm for lower-rated vs higher-rated sits — the raw pair behind "does a calmer
+ * rating coincide with a slower heart?". Null unless both groups have heart data.
  */
-fun calmnessHrGap(sessions: List<Session>): Int? {
+fun calmnessHrMeans(sessions: List<Session>): Pair<Int, Int>? {
     val rated = sessions.filter { it.calmness > 0 && it.hasHeartRate }
     val higher = rated.filter { it.calmness >= 3 }
     val lower = rated.filter { it.calmness == 1 }
     if (higher.isEmpty() || lower.isEmpty()) return null
-    return (lower.map { it.hrAvg }.average() - higher.map { it.hrAvg }.average()).toInt()
+    return lower.map { it.hrAvg }.average().toInt() to higher.map { it.hrAvg }.average().toInt()
+}
+
+/** Per-sit mind–body concordance: of the sits with a clear body signal, how often the
+ *  rating agreed. See [mindBodyAgreement]. */
+data class Agreement(val matches: Int, val total: Int, val baselineBpm: Int) {
+    val percent: Int get() = matches * 100 / total
+}
+
+/**
+ * Compares each directional rating (lower/higher — neutral carries no direction) against the
+ * body's signal: sit avg bpm vs the median bpm of all heart-rate sits in [sessions], with a
+ * ±[thresholdBpm] dead zone (a sit near the baseline says nothing). A match is body-calm &
+ * rated-higher, or body-tense & rated-lower. Null with fewer than 3 clear-signal sits.
+ */
+fun mindBodyAgreement(sessions: List<Session>, thresholdBpm: Int = 2): Agreement? {
+    val withHr = sessions.filter { it.hasHeartRate }
+    if (withHr.isEmpty()) return null
+    val sorted = withHr.map { it.hrAvg }.sorted()
+    val baseline = sorted[sorted.size / 2]
+
+    var matches = 0
+    var total = 0
+    for (s in withHr) {
+        val mindCalm = s.calmness >= 3
+        val mindTense = s.calmness == 1
+        if (!mindCalm && !mindTense) continue
+        val bodyCalm = s.hrAvg < baseline - thresholdBpm
+        val bodyTense = s.hrAvg > baseline + thresholdBpm
+        if (!bodyCalm && !bodyTense) continue
+        total++
+        if ((bodyCalm && mindCalm) || (bodyTense && mindTense)) matches++
+    }
+    return if (total < 3) null else Agreement(matches, total, baseline)
 }

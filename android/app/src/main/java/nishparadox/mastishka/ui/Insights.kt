@@ -47,7 +47,8 @@ import nishparadox.mastishka.data.medianSeries
 import nishparadox.mastishka.data.minutesPerDay
 import nishparadox.mastishka.data.parseHrSeries
 import nishparadox.mastishka.data.resample
-import nishparadox.mastishka.data.calmnessHrGap
+import nishparadox.mastishka.data.calmnessHrMeans
+import nishparadox.mastishka.data.mindBodyAgreement
 import nishparadox.mastishka.data.settleFraction
 import java.time.DayOfWeek
 import java.time.Instant
@@ -107,12 +108,23 @@ fun InsightsTab(
             }
         }
         if (calm.size >= 2) {
-            ChartCard("Calmness", "your rated sits in this range") {
-                CalmnessBar(calm)
-                calmnessHrGap(filtered)?.let { gap ->
+            ChartCard("Calmness", "share of rated sits in this range") {
+                CalmnessHistogram(calm)
+                // Mind–body concordance: per-sit, does the rating agree with the heart's
+                // signal (sit bpm clearly above/below the range's median)?
+                val agreement = mindBodyAgreement(filtered)
+                val insight = when {
+                    agreement != null ->
+                        "Mind–body agreement: ${agreement.percent}% — your rating matched the " +
+                            "heart's signal in ${agreement.matches} of ${agreement.total} " +
+                            "clear-signal sits (baseline ~${agreement.baselineBpm} bpm)."
+                    else -> calmnessHrMeans(filtered)?.let { (lowerBpm, higherBpm) ->
+                        "Heart rate when rated higher: ~$higherBpm bpm · when lower: ~$lowerBpm bpm."
+                    }
+                }
+                insight?.let {
                     Text(
-                        if (gap > 0) "Sits you rate higher run ≈$gap bpm lower."
-                        else "No clear heart-rate link to your ratings yet.",
+                        it,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                         modifier = Modifier.padding(top = 8.dp),
@@ -411,46 +423,68 @@ private fun SeriesOverlay(sits: List<Session>) {
 
 // ---------------------------------------------------------------- calmness shares
 
-/** One range-wide proportional bar: how the rated sits split lower / neutral / higher.
- *  Ordinal data, so one hue at three strengths (bright = higher). No time axis — with only
- *  three levels and sparse ratings, distribution beats trend. */
+/** A three-bar percentage histogram of the rated sits: lower · neutral · higher (left → right,
+ *  ordinal, so one hue at three strengths). No time axis — with only three levels and sparse
+ *  ratings, distribution beats trend. */
 @Composable
-private fun CalmnessBar(rated: List<Session>) {
+private fun CalmnessHistogram(rated: List<Session>) {
     val mint = MaterialTheme.colorScheme.primary
-    val higherColor = mint
-    val neutralColor = mint.copy(alpha = 0.45f)
-    val lowerColor = mint.copy(alpha = 0.16f)
+    val muted = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+    val hair = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
+    val measurer = rememberTextMeasurer()
 
     val lower = rated.count { it.calmness == 1 }
     val neutral = rated.count { it.calmness == 2 }
     val higher = rated.count { it.calmness >= 3 }
     val total = (lower + neutral + higher).coerceAtLeast(1)
+    val bars = listOf(
+        Triple("lower", lower, mint.copy(alpha = 0.16f)),
+        Triple("neutral", neutral, mint.copy(alpha = 0.45f)),
+        Triple("higher", higher, mint),
+    )
 
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        listOf(higherColor to higher, neutralColor to neutral, lowerColor to lower).forEach { (color, count) ->
-            if (count > 0) {
-                Surface(
-                    color = color,
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier.weight(count.toFloat()).fillMaxWidth(),
-                ) {}
+    Canvas(Modifier.fillMaxWidth().height(140.dp)) {
+        val labelSpace = 16.dp.toPx()
+        val pctSpace = 16.dp.toPx()
+        val plotH = size.height - labelSpace - pctSpace
+        val maxPct = bars.maxOf { it.second } * 100f / total
+        val slot = size.width / bars.size
+        val barW = (slot * 0.5f).coerceAtMost(64.dp.toPx())
+
+        hairline(hair, pctSpace + plotH)
+
+        bars.forEachIndexed { i, (name, count, color) ->
+            val pct = count * 100f / total
+            val h = if (maxPct > 0f) plotH * pct / maxPct else 0f
+            val x = i * slot + (slot - barW) / 2
+            if (h > 0f) {
+                drawRoundRect(
+                    color,
+                    topLeft = Offset(x, pctSpace + plotH - h),
+                    size = Size(barW, h),
+                    cornerRadius = CornerRadius(4.dp.toPx()),
+                )
             }
+            // Percentage above the bar, category name below the baseline — text tokens only.
+            val pctLayout = measurer.measure(
+                "${pct.toInt()}%", TextStyle(fontSize = 10.sp, color = muted)
+            )
+            drawText(
+                pctLayout,
+                topLeft = Offset(x + barW / 2 - pctLayout.size.width / 2, pctSpace + plotH - h - 15.dp.toPx()),
+            )
+            val nameLayout = measurer.measure(name, TextStyle(fontSize = 10.sp, color = muted))
+            drawText(
+                nameLayout,
+                topLeft = Offset(x + barW / 2 - nameLayout.size.width / 2, pctSpace + plotH + 3.dp.toPx()),
+            )
         }
     }
-    Row(
-        Modifier.padding(top = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        LegendDot(higherColor, "higher ${higher * 100 / total}%")
-        LegendDot(neutralColor, "neutral ${neutral * 100 / total}%")
-        LegendDot(lowerColor, "lower ${lower * 100 / total}%")
-    }
+    Text(
+        "$total rated sit${if (total == 1) "" else "s"}",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+    )
 }
 
 // ---------------------------------------------------------------- calendar heatmap
