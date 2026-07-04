@@ -38,6 +38,11 @@ Drive sync (one folder grant; sits travel as per-device jsonl — see
   medians vs your baseline — plus a per-sit mind–body agreement score), and a calendar
   heatmap of minutes per day.
 
+  <p>
+    <img src="../docs/screenshots/insights.png" width="260" alt="Insights — stat tiles, practice-time bars, heart-rate trend" />
+    <img src="../docs/screenshots/insights-charts.png" width="260" alt="Insights — calm × heart dot plot with mind–body agreement, calendar heatmap" />
+  </p>
+
 ## Install (sideload)
 
 Grab `mastishka.apk` from the [latest `v*` release](https://github.com/NISH1001/mastishka/releases),
