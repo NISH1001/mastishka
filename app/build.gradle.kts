@@ -69,4 +69,9 @@ dependencies {
     implementation(libs.androidx.health.connect.client)
 
     debugImplementation(libs.androidx.ui.tooling)
+
+    // JVM unit tests. The real org.json artifact stands in for the Android SDK's copy,
+    // which is stubbed out in local unit tests.
+    testImplementation(libs.junit)
+    testImplementation(libs.org.json)
 }
