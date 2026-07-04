@@ -110,6 +110,12 @@ fun InsightsTab(
         if (calm.size >= 2) {
             ChartCard("Calmness", "share of rated sits in this range") {
                 CalmnessHistogram(calm)
+            }
+        }
+        val calmWithHr = remember(calm) { calm.filter { it.hasHeartRate } }
+        if (calmWithHr.size >= 5) {
+            ChartCard("Calm × heart", "each dot = one sit's avg bpm, grouped by your rating") {
+                CalmVsHeart(calmWithHr)
                 // Mind–body concordance: per-sit, does the rating agree with the heart's
                 // signal (sit bpm clearly above/below the range's median)?
                 val agreement = mindBodyAgreement(filtered)
@@ -117,7 +123,7 @@ fun InsightsTab(
                     agreement != null ->
                         "Mind–body agreement: ${agreement.percent}% — your rating matched the " +
                             "heart's signal in ${agreement.matches} of ${agreement.total} " +
-                            "clear-signal sits (baseline ~${agreement.baselineBpm} bpm)."
+                            "clear-signal sits."
                     else -> calmnessHrMeans(filtered)?.let { (lowerBpm, higherBpm) ->
                         "Heart rate when rated higher: ~$higherBpm bpm · when lower: ~$lowerBpm bpm."
                     }
@@ -487,6 +493,72 @@ private fun CalmnessHistogram(rated: List<Session>) {
     )
 }
 
+// ---------------------------------------------------------------- calm × heart
+
+/** Grouped dot plot: sits by rating (lower · neutral · higher), each dot at its avg bpm.
+ *  Median tick per group; the overall median as a dashed baseline. If mind and body agree,
+ *  "higher" dots sit below the line and "lower" dots above it. */
+@Composable
+private fun CalmVsHeart(sits: List<Session>) {
+    val mint = MaterialTheme.colorScheme.primary
+    val muted = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+    val hair = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
+    val measurer = rememberTextMeasurer()
+
+    val groups = listOf(
+        "lower" to sits.filter { it.calmness == 1 },
+        "neutral" to sits.filter { it.calmness == 2 },
+        "higher" to sits.filter { it.calmness >= 3 },
+    )
+    val allBpm = sits.map { it.hrAvg }.sorted()
+    val baseline = allBpm[allBpm.size / 2]
+
+    Canvas(Modifier.fillMaxWidth().height(170.dp)) {
+        val labelSpace = 16.dp.toPx()
+        val plotH = size.height - labelSpace
+        val lo = (allBpm.first() - 3).coerceAtLeast(1)
+        val hi = (allBpm.last() + 3).coerceAtLeast(lo + 1)
+        fun y(bpm: Int) = plotH - (bpm - lo).toFloat() / (hi - lo) * plotH
+        val slot = size.width / groups.size
+
+        // Overall median: the body's baseline, dashed across all groups.
+        drawLine(
+            muted, Offset(0f, y(baseline)), Offset(size.width, y(baseline)),
+            strokeWidth = 1f,
+            pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(8f, 8f)),
+        )
+        hairline(hair, plotH)
+
+        groups.forEachIndexed { g, (name, group) ->
+            val cx = g * slot + slot / 2
+            // Deterministic golden-ratio jitter so dots don't stack (and don't flicker).
+            group.forEachIndexed { i, s ->
+                val jitter = (((i * 0.618f) % 1f) - 0.5f) * slot * 0.4f
+                drawCircle(
+                    mint.copy(alpha = 0.45f),
+                    radius = 3.5.dp.toPx(),
+                    center = Offset(cx + jitter, y(s.hrAvg)),
+                )
+            }
+            if (group.isNotEmpty()) {
+                val median = group.map { it.hrAvg }.sorted()[group.size / 2]
+                drawLine(
+                    mint, Offset(cx - 14.dp.toPx(), y(median)), Offset(cx + 14.dp.toPx(), y(median)),
+                    strokeWidth = 2.5.dp.toPx(), cap = StrokeCap.Round,
+                )
+            }
+            val nameLayout = measurer.measure(name, TextStyle(fontSize = 10.sp, color = muted))
+            drawText(
+                nameLayout,
+                topLeft = Offset(cx - nameLayout.size.width / 2, plotH + 3.dp.toPx()),
+            )
+        }
+        mutedLabel(measurer, "$hi bpm", muted, 0f, 0f)
+        mutedLabel(measurer, "~$baseline median", muted, size.width, y(baseline) - 15.dp.toPx(), anchorEnd = true)
+        mutedLabel(measurer, "$lo", muted, 0f, plotH - 15.dp.toPx())
+    }
+}
+
 // ---------------------------------------------------------------- calendar heatmap
 
 @Composable
@@ -523,11 +595,14 @@ private fun CalendarHeatmap(minutes: Map<LocalDate, Int>, from: LocalDate, to: L
             var lastMonth = -1
             weeks.forEachIndexed { col, weekStart ->
                 // Month label above the first week of each month.
-                if (weekStart.monthValue != lastMonth) {
-                    lastMonth = weekStart.monthValue
+                // Label by the week's midpoint (Thursday), so the column containing the 1st
+                // of a month gets that month's label even when the week starts in the old one.
+                val labelMonth = weekStart.plusDays(3)
+                if (labelMonth.monthValue != lastMonth) {
+                    lastMonth = labelMonth.monthValue
                     mutedLabel(
                         measurer,
-                        DateTimeFormatter.ofPattern("MMM").format(weekStart),
+                        DateTimeFormatter.ofPattern("MMM").format(labelMonth),
                         muted, leftPad + col * (cellPx + gapPx), 0f,
                     )
                 }
