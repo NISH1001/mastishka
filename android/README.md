@@ -2,8 +2,9 @@
 
 The full Mastishka app: native Kotlin + Jetpack Compose, Room (history), DataStore
 (settings), Health Connect (mindfulness sessions + heart rate), a foreground service +
-wake lock so the gong fires reliably with the screen off, and Drive sync (sits mirror to
-a Google Drive folder as jsonl — see [`../specs/ecosystem-protocol.md`](../specs/ecosystem-protocol.md)).
+wake lock so the gong fires reliably with the screen off, and automatic multi-device
+Drive sync (one folder grant; sits travel as per-device jsonl — see
+[`../specs/ecosystem-protocol.md`](../specs/ecosystem-protocol.md)).
 
 `applicationId`: `nishparadox.mastishka` · `minSdk` 26 · `compileSdk` 36
 
@@ -14,9 +15,19 @@ a Google Drive folder as jsonl — see [`../specs/ecosystem-protocol.md`](../spe
   for Vipassana sits.
 - **Health Connect** — sits sync as meditation sessions; heart rate pulled back per sit
   (BPM graph with avg/min/max) when a band records to Health Connect.
-- **History** — every sit on-device, plus **Drive sync**: History → ⋮ → *Set up Drive
-  sync…* → pick `Drive/nishparadox/mastishka/sits/` once; every saved sit then mirrors
-  automatically. *Import data…* reads both `.json` backups and other devices' `.jsonl`.
+- **Drive sync — one folder grant, then automatic (v0.4.1)** — History → ⋮ → *Set up
+  Drive sync…* → grant the `Drive/nishparadox/mastishka` folder once, ever. The app
+  finds/creates `sits/` inside, writes this phone's `sits/<device>.jsonl` after every
+  change, and **auto-discovers every other device's sit file** (the Mac's today, any
+  future device the day it appears) on each History open. No linking, no re-sync
+  buttons; duplicates are impossible (sits are identified by start time).
+- **Multi-device history** — device filter chips (**All** · per device) appear when
+  history spans devices; foreign sits carry a small device tag, flow into Health
+  Connect automatically, and the heart-rate refresh enriches them by time-correlation —
+  a Mac sit gets your band's real BPM.
+- **History** — every sit on-device (total/overtime, calmness, practice, people, notes),
+  with multi-select delete. *Import data…* reads both `.json` backups and `.jsonl` sit
+  files.
 
 ## Install (sideload)
 
