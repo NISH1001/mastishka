@@ -7,7 +7,7 @@ you**, and the timer keeps counting **overtime** so you know exactly how much lo
 
 | Platform | Where | What |
 |---|---|---|
-| **Android** | [`android/`](android/) · releases tagged `v*` | The full app: sit timer, practice types, metta, notes, heart rate via Health Connect, multi-device history with device filter, automatic Drive sync |
+| **Android** | [`android/`](android/) · releases tagged `v*` | The full app: sit timer, practice types, metta, notes, heart rate via Health Connect, multi-device history with date/device filters + an Insights tab (practice/heart/calmness charts, mind–body agreement, calendar heatmap), automatic Drive sync |
 | **macOS** | [`macos/`](macos/) · releases tagged `mac-v*` | Minimal menu-bar companion: breathing orb sit, gong, overtime, saves to the shared Drive folder; `mastishka://sit` URL scheme |
 | **Web** | [`docs/`](docs/) → **[nishparadox.com/mastishka](https://nishparadox.com/mastishka/)** | A transient sit in the browser — nothing saved, just open and sit |
 

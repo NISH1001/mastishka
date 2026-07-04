@@ -27,7 +27,16 @@ Drive sync (one folder grant; sits travel as per-device jsonl — see
   a Mac sit gets your band's real BPM.
 - **History** — every sit on-device (total/overtime, calmness, practice, people, notes),
   with multi-select delete. *Import data…* reads both `.json` backups and `.jsonl` sit
-  files.
+  files. One quiet filter row — date range (presets + custom picker) · device — applies
+  to both tabs.
+- **Insights** — a second History tab of hand-rolled charts (pure Compose Canvas, no
+  chart library): stat tiles (sits · time sat · day streak · avg bpm), practice-time
+  bars split planned/overtime (granularity follows the range), per-sit heart-rate trend
+  with min–max band, **within-a-sit overlay** (every sit's heartbeat curve + the typical
+  sit, with a "settles ≈N min" marker for where your heart typically finds its floor),
+  calmness histogram, **calm × heart** dot plot (each rated sit's bpm grouped by rating,
+  medians vs your baseline — plus a per-sit mind–body agreement score), and a calendar
+  heatmap of minutes per day.
 
 ## Install (sideload)
 
