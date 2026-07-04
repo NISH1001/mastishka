@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import nishparadox.mastishka.data.AppDatabase
@@ -19,9 +20,11 @@ import nishparadox.mastishka.data.GongType
 import nishparadox.mastishka.data.Person
 import nishparadox.mastishka.data.Session
 import nishparadox.mastishka.data.SettingsStore
+import nishparadox.mastishka.data.deviceIdFromFileName
 import nishparadox.mastishka.data.exportJson
 import nishparadox.mastishka.data.exportSitLines
 import nishparadox.mastishka.data.parseHistoryFile
+import nishparadox.mastishka.data.parseSitLines
 import nishparadox.mastishka.health.HealthConnectManager
 import nishparadox.mastishka.service.TimerService
 import nishparadox.mastishka.service.gongAudioAttributes
@@ -60,10 +63,11 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
     // Title heading language: true = Nepali (मस्तिष्क), false = English (Mastishka).
     var nepaliTitle by mutableStateOf(true)
         private set
-    // Drive sync: URI of this device's sits/<device>.jsonl; empty = not set up.
-    var syncUri by mutableStateOf("")
+    // Drive sync: tree URI of the one granted folder (Drive/nishparadox/mastishka).
+    // Everything inside is automatic — own file written, sibling devices discovered.
+    var driveRoot by mutableStateOf("")
         private set
-    val syncEnabled: Boolean get() = syncUri.isNotEmpty()
+    val syncEnabled: Boolean get() = driveRoot.isNotEmpty()
     // Stable device id naming this device's sit file (pixel-9-1a2b3c); loaded in init.
     var deviceId by mutableStateOf("")
         private set
@@ -98,17 +102,17 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { meditationType = settings.meditationType.first() }
         viewModelScope.launch { monitorHeartRate = settings.monitorHeartRate.first() }
         viewModelScope.launch { nepaliTitle = settings.nepaliTitle.first() }
-        viewModelScope.launch { syncUri = settings.syncUri.first() }
+        viewModelScope.launch { driveRoot = settings.driveRoot.first() }
         viewModelScope.launch { deviceId = settings.deviceId() }
         refreshHealthConnect()
     }
 
     /**
-     * Remember [uri] as this device's sit file and write the full history to it now.
-     * Called with the result of a create-document picker; takes a persistable permission so
-     * every future sit can be written without asking again.
+     * The one manual act, ever: the user grants the `Drive/nishparadox/mastishka` folder.
+     * From then on the app finds/creates `sits/`, writes its own device file, and pulls every
+     * other device's sits automatically — devices that don't exist yet included.
      */
-    fun setupSync(uri: Uri, onResult: (Boolean) -> Unit) {
+    fun setupDriveFolder(uri: Uri, onResult: (String) -> Unit) {
         viewModelScope.launch {
             runCatching {
                 getApplication<Application>().contentResolver.takePersistableUriPermission(
@@ -117,34 +121,115 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
                         android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
                 )
             }
-            settings.setSyncUri(uri.toString())
-            syncUri = uri.toString()
-            onResult(writeSitLines())
+            settings.setDriveRoot(uri.toString())
+            driveRoot = uri.toString()
+            settings.setSyncUri("") // retire the old single-file grant, superseded by the folder
+            val wrote = writeSitLines()
+            val (added, devices) = pullSiblingSits()
+            onResult(buildString {
+                append(
+                    if (wrote) "Drive sync on — this phone writes sits/$syncFileName"
+                    else "Folder connected, but couldn't write the sit file"
+                )
+                if (added > 0) {
+                    append(" · pulled $added sit${if (added == 1) "" else "s"} from ")
+                    append("$devices device${if (devices == 1) "" else "s"}")
+                }
+            })
         }
+    }
+
+    /** Re-scan the folder for other devices' new sits (called on History open). */
+    fun refreshDrive() {
+        if (!syncEnabled) return
+        viewModelScope.launch { pullSiblingSits() }
+    }
+
+    /** The granted folder's `sits/` subfolder, created on first use. IO — call off-main. */
+    private fun sitsFolder(): DocumentFile? {
+        if (driveRoot.isEmpty()) return null
+        val root = DocumentFile.fromTreeUri(getApplication(), Uri.parse(driveRoot)) ?: return null
+        return root.findFile("sits")?.takeIf { it.isDirectory } ?: root.createDirectory("sits")
+    }
+
+    /**
+     * Merge new sits from every other device's jsonl in `sits/` into Room — and into Health
+     * Connect (macOS has no HealthKit, so the phone is the ecosystem's health gateway).
+     * Returns (sits added, devices they came from). Fails soft per file.
+     */
+    private suspend fun pullSiblingSits(): Pair<Int, Int> = withContext(Dispatchers.IO) {
+        val folder = sitsFolder() ?: return@withContext 0 to 0
+        val resolver = getApplication<Application>().contentResolver
+        var added = 0
+        val devices = mutableSetOf<String>()
+        for (file in folder.listFiles()) {
+            val name = file.name ?: continue
+            if (!name.endsWith(".jsonl") || name == syncFileName) continue
+            val device = deviceIdFromFileName(name)
+            val text = runCatching {
+                resolver.openInputStream(file.uri)?.bufferedReader()?.use { it.readText() }
+            }.getOrNull() ?: continue
+            val existing = db.sessionDao().allStartTimes().toSet()
+            val fresh = parseSitLines(text)
+                .filter { it.startedAt !in existing }
+                .distinctBy { it.startedAt }
+                .map { it.copy(device = device) }
+            for (session in fresh) {
+                val id = db.sessionDao().insert(session)
+                added++
+                devices += device
+                if (hcConnected) {
+                    health.writeMeditation(
+                        startMillis = session.startedAt,
+                        endMillis = session.startedAt + session.totalMillis,
+                        title = session.type,
+                        notes = session.notes,
+                        clientRecordId = "mastishka-$id",
+                    )
+                }
+            }
+        }
+        added to devices.size
+    }
+
+    private suspend fun documentDisplayName(uri: Uri): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            getApplication<Application>().contentResolver.query(
+                uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        }.getOrNull()
     }
 
     fun disableSync() {
         viewModelScope.launch {
-            settings.setSyncUri("")
-            syncUri = ""
+            settings.setDriveRoot("")
+            driveRoot = ""
         }
     }
 
     /**
-     * Rewrite this device's sit file with its full history (single-writer, whole-file — see
-     * specs/ecosystem-protocol.md §3). Fails soft: sync must never break saving a sit.
+     * Rewrite this device's `sits/<device>.jsonl` inside the granted folder with its full
+     * history (single-writer, whole-file — specs/ecosystem-protocol.md §3), creating folder
+     * and file on first use. Fails soft: sync must never break saving a sit.
      */
     private suspend fun writeSitLines(): Boolean {
-        val uriString = settings.syncUri.first()
-        if (uriString.isEmpty()) return false
+        if (!syncEnabled) return false
         return runCatching {
-            val text = exportSitLines(sessions.first())
+            // Only THIS device's sits — the file is this phone's voice in the shared folder;
+            // other devices' sits already live in their own files.
+            val text = exportSitLines(sessions.first().filter { it.device.isEmpty() })
             withContext(Dispatchers.IO) {
+                val folder = sitsFolder() ?: error("sits folder unavailable")
+                val file = folder.findFile(syncFileName)?.takeIf { it.isFile }
+                    ?: folder.createFile("application/octet-stream", syncFileName)
+                    ?: error("couldn't create $syncFileName")
                 val resolver = getApplication<Application>().contentResolver
                 // "wt" truncates: shorter content (after a deletion) must not leave stale bytes.
-                resolver.openOutputStream(Uri.parse(uriString), "wt")
+                resolver.openOutputStream(file.uri, "wt")
                     ?.use { it.write(text.toByteArray()) }
-                    ?: error("Could not open sync file")
+                    ?: error("could not open sync file")
             }
         }.isSuccess
     }
@@ -357,10 +442,17 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 val bundle = parseHistoryFile(text)
 
+                // A foreign device's jsonl picked via plain import still gets provenance
+                // (from its filename); envelopes and this device's own file stay local ("").
+                val name = documentDisplayName(uri) ?: ""
+                val sourceDevice = deviceIdFromFileName(name)
+                    .takeIf { name.endsWith(".jsonl") && it != deviceId } ?: ""
+
                 val existingStarts = db.sessionDao().allStartTimes().toSet()
                 val newSessions = bundle.sessions
                     .filter { it.startedAt !in existingStarts }
                     .distinctBy { it.startedAt }
+                    .map { if (sourceDevice.isEmpty()) it else it.copy(device = sourceDevice) }
                 db.sessionDao().insertAll(newSessions)
 
                 val existingNames = people.first().map { it.name.lowercase() }.toMutableSet()

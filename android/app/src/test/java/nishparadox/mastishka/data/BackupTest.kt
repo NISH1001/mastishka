@@ -104,4 +104,21 @@ class BackupTest {
         val envelope = exportJson(sits, emptyList(), "0.3.4", 0L)
         assertTrue(parseSitLines(envelope).isEmpty())
     }
+
+    // ---------- device provenance (multi-device history) ----------
+
+    @Test
+    fun `sit lines never contain a device field`() {
+        // Schema-1 purity: in the shared folder the FILENAME carries device identity;
+        // records must stay interchangeable across devices.
+        val line = exportSitLines(listOf(sits[0].copy(device = "mac-m3-max-16a484")))
+        assertTrue(!line.contains("\"device\""))
+    }
+
+    @Test
+    fun `deviceIdFromFileName strips the jsonl extension`() {
+        assertEquals("mac-m3-max-16a484", deviceIdFromFileName("mac-m3-max-16a484.jsonl"))
+        assertEquals("pixel-9-7cd72c", deviceIdFromFileName(" pixel-9-7cd72c.jsonl "))
+        assertEquals("plain-name", deviceIdFromFileName("plain-name"))
+    }
 }

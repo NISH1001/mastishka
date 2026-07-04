@@ -93,9 +93,10 @@ private fun App(vm: MeditationViewModel) {
             onExport = vm::exportData,
             onImport = vm::importData,
             syncEnabled = vm.syncEnabled,
-            syncFileName = vm.syncFileName,
-            onSetupSync = vm::setupSync,
+            onSetupSync = vm::setupDriveFolder,
             onDisableSync = vm::disableSync,
+            thisDeviceId = vm.deviceId,
+            onRefreshDrive = vm::refreshDrive,
         )
     }
 }

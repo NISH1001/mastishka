@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -695,19 +696,25 @@ fun HistoryScreen(
     onExport: (Uri, (Boolean) -> Unit) -> Unit,
     onImport: (Uri, (ImportSummary) -> Unit) -> Unit,
     syncEnabled: Boolean,
-    syncFileName: String,
-    onSetupSync: (Uri, (Boolean) -> Unit) -> Unit,
+    onSetupSync: (Uri, (String) -> Unit) -> Unit,
     onDisableSync: () -> Unit,
+    thisDeviceId: String,
+    onRefreshDrive: () -> Unit,
 ) {
     val context = LocalContext.current
     val selected = remember { mutableStateListOf<Long>() }
     var confirmDelete by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var pendingImport by remember { mutableStateOf<Uri?>(null) }
+    // null = All devices; "" = this phone; otherwise a linked device id.
+    var deviceFilter by remember { mutableStateOf<String?>(null) }
     val selecting = selected.isNotEmpty()
 
-    // Auto-pull heart rate for any sit still missing it whenever History opens.
-    LaunchedEffect(Unit) { if (heartRateEnabled) onRefreshHeartRate() }
+    // Auto-pull heart rate + any new sits from other devices whenever History opens.
+    LaunchedEffect(Unit) {
+        if (heartRateEnabled) onRefreshHeartRate()
+        onRefreshDrive()
+    }
 
     // Storage Access Framework: the user picks where to write / which file to read. No
     // storage permission needed, and the granted Uri is scoped to just that document.
@@ -725,18 +732,14 @@ fun HistoryScreen(
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) pendingImport = uri }
-    // Drive sync setup: create this device's sits/<device>.jsonl once (ideally under
-    // Drive → nishparadox/mastishka/sits/); the app then rewrites it after every sit.
+    // Drive sync setup — the one manual act, ever: grant the Drive → nishparadox/mastishka
+    // folder. The app finds/creates sits/ inside, writes its own device file, and discovers
+    // every other device's sits automatically from then on.
     val syncLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/octet-stream")
+        ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
-        if (uri != null) onSetupSync(uri) { ok ->
-            Toast.makeText(
-                context,
-                if (ok) "Drive sync on — sits will be written to $syncFileName"
-                else "Couldn't write the sync file",
-                Toast.LENGTH_LONG,
-            ).show()
+        if (uri != null) onSetupSync(uri) { message ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -801,10 +804,10 @@ fun HistoryScreen(
                             HorizontalDivider()
                             if (syncEnabled) {
                                 DropdownMenuItem(
-                                    text = { Text("Change sync file…") },
+                                    text = { Text("Change Drive folder…") },
                                     onClick = {
                                         menuOpen = false
-                                        syncLauncher.launch(syncFileName)
+                                        syncLauncher.launch(null)
                                     },
                                 )
                                 DropdownMenuItem(
@@ -820,7 +823,7 @@ fun HistoryScreen(
                                     text = { Text("Set up Drive sync…") },
                                     onClick = {
                                         menuOpen = false
-                                        syncLauncher.launch(syncFileName)
+                                        syncLauncher.launch(null)
                                     },
                                 )
                             }
@@ -846,8 +849,37 @@ fun HistoryScreen(
                 )
                 Spacer(Modifier.height(4.dp))
             }
+
+            // Device filter — only when history spans more than one device. "" = this phone.
+            val devices = remember(sessions) { sessions.map { it.device }.distinct().sorted() }
+            if (devices.size > 1) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .horizontalScroll(rememberScrollState())
+                        .padding(vertical = 6.dp),
+                ) {
+                    SelectableChip(
+                        label = "All",
+                        selected = deviceFilter == null,
+                        onTap = { deviceFilter = null },
+                        onLongPress = {},
+                    )
+                    devices.forEach { device ->
+                        SelectableChip(
+                            label = device.ifEmpty { thisDeviceId.ifEmpty { "this phone" } },
+                            selected = deviceFilter == device,
+                            onTap = { deviceFilter = if (deviceFilter == device) null else device },
+                            onLongPress = {},
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+            val shown = if (deviceFilter == null) sessions else sessions.filter { it.device == deviceFilter }
+
             val fmt = remember { SimpleDateFormat("EEE, MMM d • h:mm a", Locale.getDefault()) }
-            sessions.forEach { s ->
+            shown.forEach { s ->
                 val isSelected = selected.contains(s.id)
                 Card(
                     modifier = Modifier
@@ -866,6 +898,13 @@ fun HistoryScreen(
                         Column(Modifier.padding(end = 16.dp, top = 12.dp, bottom = 12.dp)) {
                             Text(s.type, style = MaterialTheme.typography.titleMedium)
                             Text(fmt.format(Date(s.startedAt)), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            if (s.device.isNotEmpty()) {
+                                Text(
+                                    s.device,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                                )
+                            }
                             Spacer(Modifier.height(6.dp))
                             Text("Total ${formatClock(s.totalMillis)}  (planned ${formatClock(s.plannedMillis)}, +${formatClock(s.overtimeMillis)})")
                             Text("Calmness: ${calmnessLabel(s.calmness)}")

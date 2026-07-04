@@ -126,6 +126,10 @@ fun parseHistoryFile(text: String): BackupBundle {
 
 // ---------- Sit lines (jsonl sync format — specs/ecosystem-protocol.md §3) ----------
 
+/** Device id from a sit file's name (`mac-m3-max-16a484.jsonl` → `mac-m3-max-16a484`) —
+ *  in the shared folder the filename, not the records, carries device identity. */
+fun deviceIdFromFileName(name: String): String = name.trim().removeSuffix(".jsonl")
+
 /**
  * Serialize sits as jsonl: one canonical session object per line, no envelope. This is the
  * cross-device sync format — this device's whole history, rewritten to its own
