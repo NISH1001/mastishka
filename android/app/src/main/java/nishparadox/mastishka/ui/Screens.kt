@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.outlined.Info
@@ -70,8 +71,13 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -81,6 +87,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -101,11 +108,18 @@ import nishparadox.mastishka.HrSummary
 import nishparadox.mastishka.ImportSummary
 import nishparadox.mastishka.MeditationViewModel
 import nishparadox.mastishka.data.GongType
+import nishparadox.mastishka.data.Granularity
 import nishparadox.mastishka.data.Person
 import nishparadox.mastishka.data.Session
 import nishparadox.mastishka.service.TimerState
 import nishparadox.mastishka.service.formatClock
 import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Date
 import java.util.Locale
 
@@ -743,6 +757,44 @@ fun HistoryScreen(
         }
     }
 
+    val zone = remember { ZoneId.systemDefault() }
+    val today = remember { LocalDate.now(zone) }
+    var tab by rememberSaveable { mutableStateOf(0) }
+    var dateFilter by rememberSaveable { mutableStateOf(DateFilter.ALL) }
+    var customRange by remember { mutableStateOf<Pair<LocalDate, LocalDate>?>(null) }
+    var showRangePicker by remember { mutableStateOf(false) }
+
+    // Device + date filters compose; both apply to both tabs.
+    val devices = remember(sessions) { sessions.map { it.device }.distinct().sorted() }
+    val deviceShown =
+        if (deviceFilter == null) sessions else sessions.filter { it.device == deviceFilter }
+    val earliest = remember(deviceShown) {
+        deviceShown.minOfOrNull { it.startedAt }
+            ?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() } ?: today
+    }
+    val range = when (dateFilter) {
+        DateFilter.D7 -> today.minusDays(6) to today
+        DateFilter.D30 -> today.minusDays(29) to today
+        DateFilter.D90 -> today.minusDays(89) to today
+        DateFilter.YEAR -> today.minusDays(364) to today
+        DateFilter.ALL -> earliest to today
+        DateFilter.CUSTOM -> customRange ?: (earliest to today)
+    }
+    val from = range.first
+    val rangeTo = range.second
+    val fromMs = from.atStartOfDay(zone).toInstant().toEpochMilli()
+    val toMs = rangeTo.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+    val shown = deviceShown.filter { it.startedAt in fromMs until toMs }
+    // Bar granularity follows the span of the visible range.
+    val granularity = remember(from, rangeTo) {
+        val days = ChronoUnit.DAYS.between(from, rangeTo) + 1
+        when {
+            days <= 14 -> Granularity.DAY
+            days <= 180 -> Granularity.WEEK
+            else -> Granularity.MONTH
+        }
+    }
+
     fun toggle(id: Long) {
         if (selected.contains(id)) selected.remove(id) else selected.add(id)
     }
@@ -833,12 +885,75 @@ fun HistoryScreen(
             )
         },
     ) { padding ->
-        Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp)
-        ) {
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            // One quiet filter row: two dropdown pills (date range · device).
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                val rangeFmt = remember { DateTimeFormatter.ofPattern("MMM d") }
+                FilterPill(
+                    text = if (dateFilter == DateFilter.CUSTOM)
+                        "${rangeFmt.format(from)} – ${rangeFmt.format(rangeTo)}"
+                    else dateFilter.label
+                ) { dismiss ->
+                    DateFilter.entries.forEach { f ->
+                        DropdownMenuItem(
+                            text = { Text(f.label) },
+                            onClick = {
+                                dismiss()
+                                if (f == DateFilter.CUSTOM) showRangePicker = true
+                                else dateFilter = f
+                            },
+                        )
+                    }
+                }
+                if (devices.size > 1) {
+                    FilterPill(
+                        text = when (deviceFilter) {
+                            null -> "All devices"
+                            "" -> thisDeviceId.ifEmpty { "this phone" }
+                            else -> deviceFilter!!
+                        }
+                    ) { dismiss ->
+                        DropdownMenuItem(
+                            text = { Text("All devices") },
+                            onClick = { dismiss(); deviceFilter = null },
+                        )
+                        devices.forEach { device ->
+                            DropdownMenuItem(
+                                text = { Text(device.ifEmpty { thisDeviceId.ifEmpty { "this phone" } }) },
+                                onClick = { dismiss(); deviceFilter = device },
+                            )
+                        }
+                    }
+                }
+            }
+            TabRow(selectedTabIndex = tab) {
+                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Sits") })
+                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Insights") })
+            }
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)
+            ) {
+                if (tab == 1) {
+                    InsightsTab(
+                        filtered = shown,
+                        allSessions = sessions,
+                        from = from,
+                        to = rangeTo,
+                        granularity = granularity,
+                        zone = zone,
+                    )
+                } else {
             if (sessions.isEmpty()) {
                 Text(
                     "No sits yet. Your finished sits will appear here.",
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                )
+            } else if (shown.isEmpty()) {
+                Text(
+                    "Nothing in this range.",
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                 )
             } else {
@@ -849,34 +964,6 @@ fun HistoryScreen(
                 )
                 Spacer(Modifier.height(4.dp))
             }
-
-            // Device filter — only when history spans more than one device. "" = this phone.
-            val devices = remember(sessions) { sessions.map { it.device }.distinct().sorted() }
-            if (devices.size > 1) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier
-                        .horizontalScroll(rememberScrollState())
-                        .padding(vertical = 6.dp),
-                ) {
-                    SelectableChip(
-                        label = "All",
-                        selected = deviceFilter == null,
-                        onTap = { deviceFilter = null },
-                        onLongPress = {},
-                    )
-                    devices.forEach { device ->
-                        SelectableChip(
-                            label = device.ifEmpty { thisDeviceId.ifEmpty { "this phone" } },
-                            selected = deviceFilter == device,
-                            onTap = { deviceFilter = if (deviceFilter == device) null else device },
-                            onLongPress = {},
-                        )
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
-            }
-            val shown = if (deviceFilter == null) sessions else sessions.filter { it.device == deviceFilter }
 
             val fmt = remember { SimpleDateFormat("EEE, MMM d • h:mm a", Locale.getDefault()) }
             shown.forEach { s ->
@@ -932,6 +1019,34 @@ fun HistoryScreen(
                     }
                 }
             }
+                }
+            }
+        }
+    }
+
+    if (showRangePicker) {
+        val pickerState = rememberDateRangePickerState()
+        DatePickerDialog(
+            onDismissRequest = { showRangePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    val start = pickerState.selectedStartDateMillis
+                    val end = pickerState.selectedEndDateMillis
+                    if (start != null && end != null) {
+                        // Picker millis are UTC-midnight based.
+                        customRange =
+                            Instant.ofEpochMilli(start).atZone(ZoneOffset.UTC).toLocalDate() to
+                                Instant.ofEpochMilli(end).atZone(ZoneOffset.UTC).toLocalDate()
+                        dateFilter = DateFilter.CUSTOM
+                    }
+                    showRangePicker = false
+                }) { Text("Apply") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRangePicker = false }) { Text("Cancel") }
+            },
+        ) {
+            DateRangePicker(pickerState, modifier = Modifier.weight(1f))
         }
     }
 
@@ -981,6 +1096,44 @@ fun HistoryScreen(
 }
 
 // ---------------------------------------------------------------- helpers
+
+/** History date filter presets; CUSTOM opens the range picker. */
+private enum class DateFilter(val label: String) {
+    ALL("All time"),
+    D7("Last 7 days"),
+    D30("Last 30 days"),
+    D90("Last 90 days"),
+    YEAR("Last year"),
+    CUSTOM("Custom range…"),
+}
+
+/** A quiet dropdown pill for the History filter row. */
+@Composable
+private fun FilterPill(text: String, menuItems: @Composable (dismiss: () -> Unit) -> Unit) {
+    Box {
+        var open by remember { mutableStateOf(false) }
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(50),
+            modifier = Modifier.clickable { open = true },
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(start = 14.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+            ) {
+                Text(text, style = MaterialTheme.typography.labelLarge)
+                Icon(
+                    Icons.Filled.ArrowDropDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+            }
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            menuItems { open = false }
+        }
+    }
+}
 
 private fun calmnessLabel(v: Int): String = when (v) {
     1 -> "lower"
