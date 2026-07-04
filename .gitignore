@@ -1,18 +1,20 @@
-*.iml
-.gradle/
-/local.properties
 .DS_Store
-/build
+.claude/
+.superpowers/
+/.idea/
+*.iml
+
+# Android (Gradle project in android/)
+.gradle/
+.kotlin/
+local.properties
+/android/build/
+/android/app/build/
 /captures
 .externalNativeBuild
 .cxx
-local.properties
-/app/build/
-/.idea/
 *.apk
-.claude/
-.superpowers/
 
-# macOS app (SwiftPM)
+# macOS app (SwiftPM project in macos/)
 /macos/.build/
 /macos/dist/

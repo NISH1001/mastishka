@@ -1,35 +1,35 @@
-# Mastishka
+# Mastishka · मस्तिष्क
 
-A barebones Android app for Vipassana meditation sits.
+A barebones meditation companion for Vipassana sits — one product, three platforms.
 
-> **🌐 Try it in your browser — no install:** **[nishparadox.com/mastishka](https://nishparadox.com/mastishka/)**
-> A minimal web version of the sit — a breathing orb, the gong that rings without interrupting,
-> and overtime that keeps counting. Nothing is saved; just open the link and sit.
+The signature, everywhere: set a duration; at zero the **gong rings without interrupting
+you**, and the timer keeps counting **overtime** so you know exactly how much longer you sat.
 
-- **Sit timer** — set a duration; at zero the **gong rings without interrupting you**, and the
-  timer keeps counting *overtime* so you know exactly how much longer you sat.
-- **Gong volume** and **gong sound** (Small / Medium / Large — default Medium) are set before
-  the sit, with a **Test gong** button.
-- **Practice type** (optional) — tag a sit as Vipassana / Anapana / Focused Breathing /
-  Concentration (defaults to "Meditation"); it becomes the session title.
-- **Post-sit reflection** — a 3-way calmness check (Lower / Neutral / Higher) and notes
-  (with **voice-to-text**) for any sit; the **Metta Bhavana** people section shows only for
-  Vipassana sits.
-- **Health Connect sync** — saved sits are written as mindfulness/meditation sessions to
-  Health Connect (so they appear in Google Health and connected apps). Connect once, then it
-  syncs automatically; a manual sync also pushes past sits.
-- **Heart rate** — if you wear a band that records heart rate to Health Connect (e.g. Fitbit),
-  enable "Monitor heart rate" and each sit gets a **BPM graph** with avg/min/max — pulled by
-  time-correlation from Health Connect for the sit's window. Opening History auto-fills any
-  sit still missing it.
-- **History** of every sit (total/overtime, calmness, practice, people, notes), on-device.
+| Platform | Where | What |
+|---|---|---|
+| **Android** | [`android/`](android/) · releases tagged `v*` | The full app: sit timer, practice types, metta, notes, heart rate via Health Connect, history, Drive sync |
+| **macOS** | [`macos/`](macos/) · releases tagged `mac-v*` | Minimal menu-bar companion: breathing orb sit, gong, overtime, saves to the shared Drive folder; `mastishka://sit` URL scheme |
+| **Web** | [`docs/`](docs/) → **[nishparadox.com/mastishka](https://nishparadox.com/mastishka/)** | A transient sit in the browser — nothing saved, just open and sit |
 
-Native Kotlin + Jetpack Compose, Room (history), DataStore (settings), Health Connect, and a
-foreground service + wake lock so the gong fires reliably even with the screen off.
+## One history, across devices
 
-`applicationId`: `nishparadox.mastishka` · `minSdk` 26 · `compileSdk` 36
+Sits sync as plain files — no server, no accounts, no cloud API
+(see **[`specs/ecosystem-protocol.md`](specs/ecosystem-protocol.md)**, the contract every
+platform implements):
 
-## Screenshots
+```
+Google Drive/nishparadox/mastishka/sits/
+  pixel-9-xxxxxx.jsonl     ← written only by the phone
+  mac-m3-max-xxxxxx.jsonl  ← written only by that Mac
+```
+
+One line = one sit (time, durations, practice, calmness, notes, metta people, heart data).
+Each device appends only to its own file — conflict-free by construction — and every reader
+shows the union, deduped by start time. The same protocol defines the `mastishka://sit`
+URL scheme so companion apps (like [vishrama](https://github.com/NISH1001/vishrama)) can
+trigger a tracked sit.
+
+## Screenshots (Android)
 
 <p>
   <img src="docs/screenshots/setup.png" width="200" alt="Setup — मस्तिष्क title, practice & duration" />
@@ -40,75 +40,12 @@ foreground service + wake lock so the gong fires reliably even with the screen o
   <img src="docs/screenshots/heartrate.png" width="200" alt="Heart-rate graph per sit (from Health Connect)" />
 </p>
 
----
-
-## Install on your phone (sideload)
-
-The ready-to-install debug APK is **`mastishka.apk`** in this folder.
-
-### Option A — drag-and-drop (no cable setup)
-1. Copy `mastishka.apk` to your phone (AirDrop to a Mac won't work for Android; use Google
-   Drive, email it to yourself, or a USB file transfer).
-2. On the phone, tap the file. Android will ask to allow installing from this source — allow it.
-3. Open **Mastishka**.
-
-### Option B — over USB with adb (what was used to test)
-1. On the phone: **Settings → About phone → tap "Build number" 7 times** to enable Developer
-   Options, then **Settings → System → Developer options → enable "USB debugging"**.
-2. Plug the phone into the Mac; accept the "Allow USB debugging" prompt on the phone.
-3. From this folder:
-   ```sh
-   export ANDROID_HOME="$HOME/Library/Android/sdk"
-   "$ANDROID_HOME/platform-tools/adb" install -r mastishka.apk
-   ```
-
-> First gong: grant the notification permission when prompted (it powers the ongoing-timer
-> notification). The sit still runs without it.
-
----
-
-## Rebuild from source
-
-Tooling already installed on this machine:
-- JDK 17: `~/.jdks/jdk-17.0.19+10/Contents/Home`
-- Android SDK: `~/Library/Android/sdk`
-
-```sh
-export JAVA_HOME="$HOME/.jdks/jdk-17.0.19+10/Contents/Home"
-export ANDROID_HOME="$HOME/Library/Android/sdk"
-
-# Regenerate the gong sound (only needed if you change scripts/generate_gong.py)
-python3 scripts/generate_gong.py
-
-# Build the debug APK -> app/build/outputs/apk/debug/app-debug.apk
-./gradlew :app:assembleDebug
-```
-
-## Run on the Pixel 9 emulator
-
-```sh
-export ANDROID_HOME="$HOME/Library/Android/sdk"
-export ANDROID_SDK_ROOT="$ANDROID_HOME"
-
-# Boot the emulator (AVD "pixel9" already created)
-"$ANDROID_HOME/emulator/emulator" -avd pixel9 &
-
-# Install + launch
-"$ANDROID_HOME/platform-tools/adb" install -r app/build/outputs/apk/debug/app-debug.apk
-"$ANDROID_HOME/platform-tools/adb" shell am start -n nishparadox.mastishka/.MainActivity
-```
-
 ## Project layout
 
 ```
-app/src/main/java/nishparadox/mastishka/
-  MainActivity.kt              # screen flow + notification permission
-  MeditationViewModel.kt       # settings, DB, timer state, test-gong playback
-  service/TimerService.kt      # foreground clock, gong, wake lock, notification
-  data/AppData.kt              # Room entities/DAOs/DB + DataStore settings
-  ui/Screens.kt                # Setup / Sit / Metta / History composables
-  ui/Theme.kt                  # Compose Material3 theme
-app/src/main/res/raw/gong_{small,medium,large}.ogg  # synthesized gongs (default: medium)
-scripts/generate_gong.py       # bell/gong additive synthesis, 3 sizes (needs ffmpeg for OGG)
-docs/index.html                # standalone minimal web version (GitHub Pages → nishparadox.com/mastishka)
+android/   Kotlin + Jetpack Compose app (Gradle project — see android/README.md)
+macos/     Swift 6 + SwiftUI menu-bar app (SwiftPM, no Xcode — see macos/README.md)
+docs/      the web sit (GitHub Pages) + screenshots
+specs/     ecosystem protocol + design specs
+scripts/   gong additive synthesis (renders OGG for Android, AAC for macOS)
 ```

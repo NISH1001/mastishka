@@ -63,7 +63,7 @@ Before opening a `mastishka://` URL, a sender MUST check a handler exists
 ## 2. Canonical sit record (schema 1)
 
 One sit = one JSON object. This is exactly the `sessions[]` element of the
-Mastishka Android backup format (`app/src/main/java/nishparadox/mastishka/data/Backup.kt`),
+Mastishka Android backup format (`android/app/src/main/java/nishparadox/mastishka/data/Backup.kt`),
 which is the reference implementation.
 
 ```json
