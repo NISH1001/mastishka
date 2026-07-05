@@ -10,6 +10,7 @@ private enum Palette {
     // Orb "mastishka mint": core rgb(143,211,194), glow rgb(94,140,127).
     static let core = (r: 143.0 / 255.0, g: 211.0 / 255.0, b: 194.0 / 255.0)
     static let glow = (r: 94.0 / 255.0, g: 140.0 / 255.0, b: 127.0 / 255.0)
+    static let mint = Color(red: 143.0 / 255.0, green: 211.0 / 255.0, blue: 194.0 / 255.0)
 }
 
 /// The mastishka breath: 10 s raised-cosine, half in, half out.
@@ -21,7 +22,8 @@ private func breath(_ t: Double) -> Double {
 
 struct SitView: View {
     @ObservedObject var session: SitSessionController
-    @State private var calmness = 0
+    // Neutral pre-selected, matching the Android post-sit check (1/2/3 = lower/neutral/higher).
+    @State private var calmness = 2
     @State private var notes = ""
     private let appeared = Date()
 
@@ -73,7 +75,7 @@ struct SitView: View {
         .frame(minWidth: 560, minHeight: 640)
         .onChange(of: session.phase) {
             if session.phase == .sitting {
-                calmness = 0
+                calmness = 2
                 notes = ""
             }
         }
@@ -96,17 +98,25 @@ struct SitView: View {
             Text("Sat \(formatClock(session.timer.elapsedMillis))")
                 .font(.system(size: 14))
                 .foregroundStyle(Palette.ink.opacity(0.5))
-            HStack(spacing: 12) {
-                ForEach(1...5, id: \.self) { level in
+            // Three tap-categories, matching the Android post-sit check (1/2/3 = lower/neutral/
+            // higher). Leaving it unset (0) means "unrated" — excluded from the calmness charts.
+            HStack(spacing: 10) {
+                ForEach([(1, "Lower"), (2, "Neutral"), (3, "Higher")], id: \.0) { value, label in
+                    let selected = calmness == value
                     Button {
-                        calmness = level
+                        calmness = value
                     } label: {
-                        Circle()
-                            .fill(level <= calmness ? Palette.ink.opacity(0.85) : Palette.ink.opacity(0.14))
-                            .frame(width: 22, height: 22)
+                        Text(label)
+                            .font(.system(size: 14))
+                            .foregroundStyle(selected ? Palette.backgroundBottom : Palette.ink.opacity(0.85))
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 18)
+                            .background(
+                                selected ? Palette.mint : Palette.ink.opacity(0.12),
+                                in: RoundedRectangle(cornerRadius: 8)
+                            )
                     }
                     .buttonStyle(.plain)
-                    .help("Calmness \(level)")
                 }
             }
             TextField("notes (optional)", text: $notes)
