@@ -1,10 +1,12 @@
 import AppKit
 import MastishkaCore
+import ServiceManagement
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let session = SitSessionController()
+    private let testGong = GongPlayer()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -41,12 +43,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(item)
         }
         menu.addItem(.separator())
+
+        // Gong: size, volume, test — persisted in UserDefaults, read by GongPlayer.
+        let gongItem = NSMenuItem(title: "Gong", action: nil, keyEquivalent: "")
+        let gongMenu = NSMenu()
+        for size in GongPlayer.sizes {
+            let item = NSMenuItem(title: size.capitalized, action: #selector(setGongSize(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = size
+            item.state = GongPlayer.size == size ? .on : .off
+            gongMenu.addItem(item)
+        }
+        gongMenu.addItem(.separator())
+        for volume in GongPlayer.volumes {
+            let item = NSMenuItem(title: "\(Int(volume * 100))%", action: #selector(setGongVolume(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = volume
+            item.state = abs(GongPlayer.volume - volume) < 0.01 ? .on : .off
+            gongMenu.addItem(item)
+        }
+        gongMenu.addItem(.separator())
+        let test = NSMenuItem(title: "Test gong", action: #selector(playTestGong), keyEquivalent: "")
+        test.target = self
+        gongMenu.addItem(test)
+        gongItem.submenu = gongMenu
+        menu.addItem(gongItem)
+
         let folder = NSMenuItem(title: "Open sits folder", action: #selector(openSitsFolder), keyEquivalent: "")
         folder.target = self
         menu.addItem(folder)
+
+        let login = NSMenuItem(title: "Launch at login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+        login.target = self
+        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        menu.addItem(login)
+
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Mastishka", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         return menu
+    }
+
+    @objc private func setGongSize(_ sender: NSMenuItem) {
+        GongPlayer.size = sender.representedObject as? String ?? "medium"
+        statusItem.menu = buildMenu()
+    }
+
+    @objc private func setGongVolume(_ sender: NSMenuItem) {
+        GongPlayer.volume = sender.representedObject as? Float ?? 0.8
+        statusItem.menu = buildMenu()
+    }
+
+    @objc private func playTestGong() {
+        testGong.play()
+    }
+
+    @objc private func toggleLaunchAtLogin() {
+        let service = SMAppService.mainApp
+        if service.status == .enabled {
+            try? service.unregister()
+        } else {
+            try? service.register()
+        }
+        statusItem.menu = buildMenu()
     }
 
     @objc private func beginSit(_ sender: NSMenuItem) {
