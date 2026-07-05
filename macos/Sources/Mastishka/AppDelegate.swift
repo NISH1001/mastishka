@@ -24,7 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             session.start(
                 minutes: command.minutes ?? 10,
                 practice: displayName(forSlug: command.practice),
-                prompt: command.prompt
+                prompt: command.prompt,
+                source: command.source
             )
             return
         }
