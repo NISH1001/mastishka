@@ -74,6 +74,43 @@ class InsightsTest {
         assertEquals(LocalDate.parse("2026-07-01"), buckets[1].start)
     }
 
+    // ---------- per-day totals & average ----------
+
+    @Test
+    fun `dailyTotals drops leading empty days but keeps mid-range zeros`() {
+        // Range opens 07-01 but the first sit is 07-03; a gap on 07-04 stays as a zero day.
+        val sessions = listOf(sit("2026-07-03", totalMin = 40), sit("2026-07-05", totalMin = 20))
+        val daily = dailyTotals(
+            sessions, LocalDate.parse("2026-07-01"), LocalDate.parse("2026-07-05"), zone,
+        )
+        // 07-03, 07-04(0), 07-05 — the empty 07-01/07-02 lead is trimmed.
+        assertEquals(3, daily.size)
+        assertEquals(LocalDate.parse("2026-07-03"), daily.first().start)
+        assertEquals(listOf(40, 0, 20), daily.map { it.totalMinutes })
+    }
+
+    @Test
+    fun `perDayAverage divides total by days since the first sit, not by sits`() {
+        // Two sits on one day + one the next = 90 min over 2 days = 45/day (not 30/sit).
+        val sessions = listOf(
+            sit("2026-07-03", hour = 6, totalMin = 30),
+            sit("2026-07-03", hour = 8, totalMin = 30),
+            sit("2026-07-04", totalMin = 30),
+        )
+        val daily = dailyTotals(
+            sessions, LocalDate.parse("2026-07-01"), LocalDate.parse("2026-07-04"), zone,
+        )
+        assertEquals(45, perDayAverage(daily))
+    }
+
+    @Test
+    fun `perDayAverage is zero for an empty range`() {
+        val daily = dailyTotals(
+            emptyList(), LocalDate.parse("2026-07-01"), LocalDate.parse("2026-07-07"), zone,
+        )
+        assertEquals(0, perDayAverage(daily))
+    }
+
     // ---------- streak ----------
 
     @Test
