@@ -64,6 +64,25 @@ fun bucketMinutes(
     return buckets
 }
 
+/**
+ * Continuous daily totals over [from]..[to], with leading empty days (before the first sit in
+ * range) dropped. The trim means a wide preset like "Last year" over a month-old history divides
+ * the per-day average by the days you could actually have sat, not by 365. Trailing empty days —
+ * a stretch you took off inside the range — are kept, so they count as zero-minute days.
+ */
+fun dailyTotals(
+    sessions: List<Session>,
+    from: LocalDate,
+    to: LocalDate,
+    zone: ZoneId,
+): List<Bucket> =
+    bucketMinutes(sessions, from, to, Granularity.DAY, zone).dropWhile { it.totalMinutes == 0 }
+
+/** Mean minutes per day over [daily] (a [dailyTotals] series); 0 when empty. This is the
+ *  Google-Health-style "typical day", not per-sit — a 2m warmup plus a 60m sit is one 62m day. */
+fun perDayAverage(daily: List<Bucket>): Int =
+    if (daily.isEmpty()) 0 else daily.sumOf { it.totalMinutes } / daily.size
+
 /** Consecutive days sat, counting back from [today] — still alive if the last sit was
  *  yesterday (today's sit may simply not have happened yet). */
 fun currentStreakDays(sessions: List<Session>, zone: ZoneId, today: LocalDate): Int {

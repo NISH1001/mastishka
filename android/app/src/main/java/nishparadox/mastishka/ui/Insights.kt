@@ -43,7 +43,9 @@ import nishparadox.mastishka.data.Bucket
 import nishparadox.mastishka.data.Granularity
 import nishparadox.mastishka.data.Session
 import nishparadox.mastishka.data.currentStreakDays
+import nishparadox.mastishka.data.dailyTotals
 import nishparadox.mastishka.data.medianSeries
+import nishparadox.mastishka.data.perDayAverage
 import nishparadox.mastishka.data.minutesPerDay
 import nishparadox.mastishka.data.parseHrSeries
 import nishparadox.mastishka.data.resample
@@ -76,6 +78,10 @@ fun InsightsTab(
     val buckets = remember(filtered, from, to, granularity) {
         nishparadox.mastishka.data.bucketMinutes(filtered, from, to, granularity, zone)
     }
+    // Per-day series (always daily, zeros kept mid-range) drives both the "avg/day" tile and the
+    // minutes-per-day line, so the tile number equals the chart's average line by construction.
+    val daily = remember(filtered, from, to) { dailyTotals(filtered, from, to, zone) }
+    val avgPerDay = remember(daily) { perDayAverage(daily) }
     val withHr = remember(filtered) { filtered.filter { it.hasHeartRate }.sortedBy { it.startedAt } }
     val calm = remember(filtered) { filtered.filter { it.calmness > 0 }.sortedBy { it.startedAt } }
     val heat = remember(filtered) { minutesPerDay(filtered, zone) }
@@ -84,7 +90,7 @@ fun InsightsTab(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        StatTiles(filtered, allSessions, zone)
+        StatTiles(filtered, allSessions, avgPerDay, zone)
         if (filtered.isEmpty()) {
             Text(
                 "Nothing in this range yet.",
@@ -96,6 +102,11 @@ fun InsightsTab(
         ChartCard("Practice time", granularity.legend()) {
             BarChart(buckets, granularity)
             PlannedOvertimeLegend()
+        }
+        if (daily.size >= 2) {
+            ChartCard("Minutes per day", "daily total · your average dashed") {
+                MinutesPerDayLine(daily, avgPerDay)
+            }
         }
         if (withHr.size >= 2) {
             ChartCard("Heart rate", "avg per sit, min–max band") {
@@ -154,21 +165,42 @@ private fun Granularity.legend() = when (this) {
 // ---------------------------------------------------------------- tiles
 
 @Composable
-private fun StatTiles(filtered: List<Session>, allSessions: List<Session>, zone: ZoneId) {
+private fun StatTiles(
+    filtered: List<Session>,
+    allSessions: List<Session>,
+    avgPerDayMinutes: Int,
+    zone: ZoneId,
+) {
     val totalMillis = filtered.sumOf { it.totalMillis }
     val hours = totalMillis / 3_600_000
     val minutes = (totalMillis % 3_600_000) / 60_000
+    // Average per day (Google-Health-style: total time ÷ days sat, not ÷ sits). Follows the filter.
+    val avgHours = avgPerDayMinutes / 60
+    val avgMinutes = avgPerDayMinutes % 60
     val streak = remember(allSessions) {
         currentStreakDays(allSessions, zone, LocalDate.now(zone))
     }
     val hrSits = filtered.filter { it.hasHeartRate }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        StatTile("${filtered.size}", "sits", Modifier.weight(1f))
-        StatTile(if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m", "sat", Modifier.weight(1f))
-        StatTile("$streak", "day streak", Modifier.weight(1f))
+    // Fixed-width tiles in a scrollable row — swipe for the ones past the screen edge.
+    val tileWidth = 92.dp
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        StatTile("${filtered.size}", "sits", Modifier.width(tileWidth))
+        StatTile(if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m", "sat", Modifier.width(tileWidth))
+        StatTile(
+            when {
+                filtered.isEmpty() -> "–"
+                avgHours > 0 -> "${avgHours}h ${avgMinutes}m"
+                else -> "${avgMinutes}m"
+            },
+            "avg/day", Modifier.width(tileWidth),
+        )
+        StatTile("$streak", "day streak", Modifier.width(tileWidth))
         StatTile(
             if (hrSits.isEmpty()) "–" else "${hrSits.map { it.hrAvg }.average().toInt()}",
-            "avg bpm", Modifier.weight(1f),
+            "avg bpm", Modifier.width(tileWidth),
         )
     }
 }
@@ -308,6 +340,56 @@ private fun BarChart(buckets: List<Bucket>, granularity: Granularity) {
         if (buckets.size > 1) {
             mutedLabel(
                 measurer, labelFmt.format(buckets.last().start), muted,
+                size.width, plotH + 3.dp.toPx(), anchorEnd = true,
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------- minutes per day
+
+/** Each day's total minutes as a line across the range (dips to 0 on days not sat), with the
+ *  per-day average as a dashed reference — the "typical day" the avg/day tile reports. */
+@Composable
+private fun MinutesPerDayLine(daily: List<Bucket>, avgPerDay: Int) {
+    val mint = MaterialTheme.colorScheme.primary
+    val muted = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+    val hair = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
+    val measurer = rememberTextMeasurer()
+    val fmt = DateTimeFormatter.ofPattern("MMM d")
+
+    Canvas(Modifier.fillMaxWidth().height(150.dp)) {
+        val labelSpace = 16.dp.toPx()
+        val plotH = size.height - labelSpace
+        val hi = maxOf(daily.maxOf { it.totalMinutes }, avgPerDay).coerceAtLeast(1)
+        val n = daily.size
+        fun x(i: Int) = if (n <= 1) size.width / 2 else i.toFloat() / (n - 1) * size.width
+        fun y(m: Int) = plotH - m.toFloat() / hi * plotH
+
+        hairline(hair, plotH)
+
+        // Average reference, dashed like the median baselines elsewhere.
+        val ay = y(avgPerDay)
+        drawLine(
+            muted, Offset(0f, ay), Offset(size.width, ay),
+            strokeWidth = 1f,
+            pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(8f, 8f)),
+        )
+
+        val line = Path()
+        daily.forEachIndexed { i, b ->
+            if (i == 0) line.moveTo(x(i), y(b.totalMinutes)) else line.lineTo(x(i), y(b.totalMinutes))
+        }
+        drawPath(line, mint, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+
+        mutedLabel(measurer, "${hi}m", muted, 0f, 0f)
+        mutedLabel(measurer, "avg $avgPerDay", muted, size.width, ay - 15.dp.toPx(), anchorEnd = true)
+        daily.firstOrNull()?.let {
+            mutedLabel(measurer, fmt.format(it.start), muted, 0f, plotH + 3.dp.toPx())
+        }
+        if (daily.size > 1) {
+            mutedLabel(
+                measurer, fmt.format(daily.last().start), muted,
                 size.width, plotH + 3.dp.toPx(), anchorEnd = true,
             )
         }
