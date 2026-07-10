@@ -103,6 +103,31 @@ fun minutesPerDay(sessions: List<Session>, zone: ZoneId): Map<LocalDate, Int> {
     return minutes.mapValues { (it.value / 60_000L).toInt() }
 }
 
+// ---------------------------------------------------------------- metta / people
+
+/** One person and how many sits in the set held them in metta. */
+data class PersonShare(val name: String, val count: Int)
+
+/** People held across [sessions] that named anyone, ranked most-held first, alongside how many
+ *  sits named at least one person — the denominator behind each share ("of my metta sits, this
+ *  fraction included them"). Ties break alphabetically so the order is stable across recompositions. */
+data class MettaPeople(val shares: List<PersonShare>, val sitsWithPeople: Int)
+
+fun mettaPeople(sessions: List<Session>): MettaPeople {
+    val counts = HashMap<String, Int>()
+    var sitsWithPeople = 0
+    for (s in sessions) {
+        val names = s.people.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (names.isEmpty()) continue
+        sitsWithPeople++
+        for (name in names) counts.merge(name, 1, Int::plus)
+    }
+    val shares = counts.entries
+        .map { PersonShare(it.key, it.value) }
+        .sortedWith(compareByDescending<PersonShare> { it.count }.thenBy { it.name })
+    return MettaPeople(shares, sitsWithPeople)
+}
+
 /** The stored heart-rate series: comma-separated bpm ints; junk tokens skipped. */
 fun parseHrSeries(csv: String): List<Int> =
     csv.split(",").mapNotNull { it.trim().toIntOrNull() }
