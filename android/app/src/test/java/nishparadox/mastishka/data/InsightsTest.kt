@@ -137,6 +137,37 @@ class InsightsTest {
         assertEquals(1, currentStreakDays(sessions, zone, LocalDate.parse("2026-07-04")))
     }
 
+    // ---------- metta / people ----------
+
+    @Test
+    fun `mettaPeople ranks by sits held and counts the denominator`() {
+        val sessions = listOf(
+            sit("2026-07-01").copy(people = listOf("Mom", "Anu")),
+            sit("2026-07-02").copy(people = listOf("Anu")),
+            sit("2026-07-03").copy(people = emptyList()),        // no people → not in denominator
+            sit("2026-07-04").copy(people = listOf("Anu", "Nessa")),
+        )
+        val m = mettaPeople(sessions)
+        assertEquals(3, m.sitsWithPeople)
+        // Anu in 3 sits, then Mom & Nessa (1 each) tie-broken alphabetically.
+        assertEquals(listOf("Anu", "Mom", "Nessa"), m.shares.map { it.name })
+        assertEquals(3, m.shares.first().count)
+    }
+
+    @Test
+    fun `mettaPeople counts a name repeated within one sit only once`() {
+        val m = mettaPeople(listOf(sit("2026-07-01").copy(people = listOf("Mom", "Mom"))))
+        assertEquals(1, m.sitsWithPeople)
+        assertEquals(1, m.shares.single().count)
+    }
+
+    @Test
+    fun `mettaPeople is empty when no sit names anyone`() {
+        val m = mettaPeople(listOf(sit("2026-07-01")))
+        assertEquals(0, m.sitsWithPeople)
+        assertEquals(emptyList<PersonShare>(), m.shares)
+    }
+
     // ---------- series helpers ----------
 
     @Test

@@ -1,12 +1,14 @@
 package nishparadox.mastishka.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -37,6 +40,8 @@ import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import nishparadox.mastishka.data.Bucket
@@ -45,6 +50,8 @@ import nishparadox.mastishka.data.Session
 import nishparadox.mastishka.data.currentStreakDays
 import nishparadox.mastishka.data.dailyTotals
 import nishparadox.mastishka.data.medianSeries
+import nishparadox.mastishka.data.MettaPeople
+import nishparadox.mastishka.data.mettaPeople
 import nishparadox.mastishka.data.perDayAverage
 import nishparadox.mastishka.data.minutesPerDay
 import nishparadox.mastishka.data.parseHrSeries
@@ -85,6 +92,7 @@ fun InsightsTab(
     val withHr = remember(filtered) { filtered.filter { it.hasHeartRate }.sortedBy { it.startedAt } }
     val calm = remember(filtered) { filtered.filter { it.calmness > 0 }.sortedBy { it.startedAt } }
     val heat = remember(filtered) { minutesPerDay(filtered, zone) }
+    val metta = remember(filtered) { mettaPeople(filtered) }
     val overlaySits = remember(withHr) {
         withHr.takeLast(40).filter { parseHrSeries(it.hrSeries).size >= 2 }
     }
@@ -121,6 +129,11 @@ fun InsightsTab(
         if (calm.size >= 2) {
             ChartCard("Calmness", "share of rated sits in this range") {
                 CalmnessHistogram(calm)
+            }
+        }
+        if (metta.sitsWithPeople >= 2) {
+            ChartCard("Metta · people held", "share of your ${metta.sitsWithPeople} metta sits") {
+                PeopleBars(metta)
             }
         }
         val calmWithHr = remember(calm) { calm.filter { it.hasHeartRate } }
@@ -573,6 +586,56 @@ private fun CalmnessHistogram(rated: List<Session>) {
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
     )
+}
+
+// ---------------------------------------------------------------- metta / people
+
+/** Ranked horizontal bars: each person you've held, bar length = share of your metta sits (the
+ *  sits that named anyone) that included them, with the raw count so a high % doesn't hide a low n.
+ *  One mint hue — it's a single ranked measure, no categorical color needed. */
+@Composable
+private fun PeopleBars(data: MettaPeople) {
+    val mint = MaterialTheme.colorScheme.primary
+    val track = mint.copy(alpha = 0.12f)
+    val muted = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        data.shares.forEach { s ->
+            val pct = s.count * 100 / data.sitsWithPeople
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    s.name,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.width(92.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .height(14.dp)
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(track),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth((pct / 100f).coerceIn(0.02f, 1f))
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(mint),
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "$pct% (${s.count})",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = muted,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.width(72.dp),
+                )
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------- calm × heart
