@@ -69,7 +69,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -294,6 +293,13 @@ fun SetupScreen(
                 onAdd = vm::addRecording,
                 onRemove = vm::removeRecording,
                 onMore = onMoreRecordings,
+                previewId = vm.previewId,
+                previewPlaying = vm.previewPlaying,
+                previewPosition = vm.previewPosition,
+                previewDuration = vm.previewDuration,
+                onTogglePreview = vm::togglePreview,
+                onSeekPreview = vm::seekPreview,
+                onStopPreview = vm::stopPreview,
             )
         } else Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -387,13 +393,7 @@ fun SetupScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                 ) {
-                    // One test button for the one slider: the recording in a guided sit,
-                    // the gong otherwise.
-                    if (vm.canPreviewRecording) {
-                        FilledTonalButton(onClick = { vm.testRecording() }) { Text("Test recording") }
-                    } else {
-                        FilledTonalButton(onClick = { vm.testGong() }) { Text("Test gong") }
-                    }
+                    FilledTonalButton(onClick = { vm.testGong() }) { Text("Test gong") }
                     OutlinedButton(onClick = { vm.stopTestGong() }) { Text("Stop") }
                 }
             }
@@ -511,6 +511,13 @@ private fun GuidedCard(
     onAdd: (Uri) -> Unit,
     onRemove: (String) -> Unit,
     onMore: () -> Unit,
+    previewId: String?,
+    previewPlaying: Boolean,
+    previewPosition: Long,
+    previewDuration: Long,
+    onTogglePreview: (String) -> Unit,
+    onSeekPreview: (Long) -> Unit,
+    onStopPreview: () -> Unit,
 ) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onAdd(uri)
@@ -535,61 +542,88 @@ private fun GuidedCard(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
-        Column(Modifier.padding(start = 8.dp, end = 16.dp, top = 20.dp, bottom = 12.dp)) {
+        Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 20.dp, bottom = 12.dp)) {
             Text(
                 "Guided meditation",
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(start = 12.dp),
+                modifier = Modifier.padding(start = 8.dp),
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
+            // Each recording is a rounded tile; the chosen one is shaded in the app's mint.
             recordings.forEach { r ->
                 val downloading = progress[r.id]
-                Row(
+                val selected = r.id == selectedId
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
+                        .padding(vertical = 3.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(
+                            if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
+                        )
                         .combinedClickable(
                             onClick = { onSelect(r.id) },
                             onLongClick = { if (r.downloaded) removing = r },
                         )
-                        .padding(vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .padding(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
                 ) {
-                    RadioButton(selected = r.id == selectedId, onClick = { onSelect(r.id) })
-                    Text(r.title, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.width(8.dp))
-                    when {
-                        // Downloading: a ring that fills, with the percentage beside it.
-                        downloading != null -> {
-                            Text("${(downloading * 100).toInt()}%", style = MaterialTheme.typography.labelLarge, color = faint)
-                            Spacer(Modifier.width(8.dp))
-                            CircularProgressIndicator(
-                                progress = { downloading },
-                                modifier = Modifier.size(22.dp),
-                                strokeWidth = 3.dp,
-                            )
-                        }
-                        // On the phone: its length.
-                        r.downloaded -> Text(
-                            if (r.durationMillis > 0) formatClock(r.durationMillis) else "–",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = faint,
-                        )
-                        // Not yet downloaded: how big it is, and a download icon.
-                        else -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
                             Text(
-                                "${formatClock(r.durationMillis)} · ${"%.0f".format(r.sizeBytes / 1_048_576.0)} MB",
+                                r.title,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                                fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            // Supporting line: length, plus what downloading it involves.
+                            Text(
+                                when {
+                                    downloading != null -> "Downloading ${(downloading * 100).toInt()}%"
+                                    r.downloaded -> if (r.durationMillis > 0) formatClock(r.durationMillis) else "–"
+                                    else -> "${formatClock(r.durationMillis)} · ${"%.0f".format(r.sizeBytes / 1_048_576.0)} MB"
+                                },
                                 style = MaterialTheme.typography.labelMedium,
                                 color = faint,
                             )
-                            Spacer(Modifier.width(6.dp))
-                            Icon(
-                                Icons.Filled.Download,
-                                contentDescription = "Download",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp),
-                            )
                         }
+                        Spacer(Modifier.width(8.dp))
+                        // Trailing control: download progress, preview play/pause, or download.
+                        Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                            when {
+                                downloading != null -> CircularProgressIndicator(
+                                    progress = { downloading },
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 3.dp,
+                                )
+                                r.downloaded -> {
+                                    val playingThis = previewId == r.id && previewPlaying
+                                    IconButton(onClick = { onTogglePreview(r.id) }) {
+                                        Icon(
+                                            if (playingThis) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                            contentDescription = if (playingThis) "Pause preview" else "Preview this recording",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                }
+                                else -> Icon(
+                                    Icons.Filled.Download,
+                                    contentDescription = "Download",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
+                        }
+                    }
+                    if (previewId == r.id) {
+                        PreviewSeekBar(
+                            position = previewPosition,
+                            duration = previewDuration,
+                            onSeek = onSeekPreview,
+                            onClose = onStopPreview,
+                        )
                     }
                 }
             }
@@ -606,6 +640,39 @@ private fun GuidedCard(
                 Spacer(Modifier.width(8.dp))
                 Text("Add your own recording")
             }
+        }
+    }
+}
+
+/** Seek bar under the recording being previewed: drag to any point, ✕ to stop. */
+@Composable
+private fun PreviewSeekBar(position: Long, duration: Long, onSeek: (Long) -> Unit, onClose: () -> Unit) {
+    // While the thumb is being dragged it follows the finger, not the player.
+    var dragging by remember { mutableStateOf<Float?>(null) }
+    val max = duration.coerceAtLeast(1L).toFloat()
+    val shown = dragging ?: position.toFloat().coerceIn(0f, max)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Slider(
+            value = shown,
+            onValueChange = { dragging = it },
+            onValueChangeFinished = {
+                dragging?.let { onSeek(it.toLong()) }
+                dragging = null
+            },
+            valueRange = 0f..max,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "${formatClock(shown.toLong())} / ${formatClock(duration)}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        )
+        IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
+            Icon(Icons.Filled.Close, contentDescription = "Stop preview", modifier = Modifier.size(18.dp))
         }
     }
 }
