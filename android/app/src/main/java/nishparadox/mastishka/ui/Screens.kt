@@ -21,6 +21,9 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,12 +40,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -62,6 +68,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -69,13 +76,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.Tab
@@ -92,11 +99,19 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -294,6 +309,13 @@ fun SetupScreen(
                 onAdd = vm::addRecording,
                 onRemove = vm::removeRecording,
                 onMore = onMoreRecordings,
+                previewId = vm.previewId,
+                previewPlaying = vm.previewPlaying,
+                previewPosition = vm.previewPosition,
+                previewDuration = vm.previewDuration,
+                onTogglePreview = vm::togglePreview,
+                onSeekPreview = vm::seekPreview,
+                onStopPreview = vm::stopPreview,
             )
         } else Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -347,153 +369,238 @@ fun SetupScreen(
             }
         }
 
-        Spacer(Modifier.height(22.dp))
-        HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f))
         Spacer(Modifier.height(16.dp))
 
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-            Column(Modifier.padding(20.dp)) {
+        // Everything below is common to every sit, silent or guided.
+        val surface = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        val faint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+
+        // Past sits: history and insights.
+        Card(colors = surface, modifier = Modifier.fillMaxWidth()) {
+            SettingRow(
+                icon = Icons.Filled.History,
+                title = "Past sits",
+                supporting = "History and insights",
+                onClick = onHistory,
+            ) {
+                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = faint)
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // Sound: one volume for the gong and the recording. The button beside the bar plays
+        // whatever this sit will play — the gong in Silent, the chosen recording in Guided —
+        // so the level can be set by ear. The gong's voice only matters in a silent sit.
+        Card(colors = surface, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
+                Text("Sound", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(12.dp))
+                val previewable = vm.guidedMode && vm.selectedRecording?.downloaded == true
+                val sounding = if (vm.guidedMode) {
+                    vm.previewId == vm.selectedRecordingId && vm.previewPlaying
+                } else vm.gongTesting
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.VolumeUp, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Volume — ${(vm.gongVolume * 100).toInt()}%", style = MaterialTheme.typography.titleMedium)
-                }
-                Text(
-                    "For the gong, and for the recording in a guided sit",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                )
-                Slider(
-                    value = vm.gongVolume,
-                    onValueChange = { vm.updateGongVolume(it) },
-                    valueRange = 0f..1f,
-                )
-                Spacer(Modifier.height(12.dp))
-                Text("Gong sound", style = MaterialTheme.typography.labelLarge)
-                Spacer(Modifier.height(6.dp))
-                // Single-choice segmented control: equal-width segments that share the row width,
-                // so labels can't overflow/wrap even at large font scales (e.g. Samsung One UI).
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    GongType.entries.forEachIndexed { index, type ->
-                        SegmentedButton(
-                            selected = vm.gongType == type,
-                            onClick = { vm.updateGongType(type) },
-                            shape = SegmentedButtonDefaults.itemShape(index = index, count = GongType.entries.size),
-                        ) { Text(type.label, maxLines = 1) }
+                    VolumeBar(
+                        value = vm.gongVolume,
+                        onChange = { vm.updateGongVolume(it) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    FilledTonalIconButton(
+                        onClick = {
+                            when {
+                                previewable -> vm.togglePreview(vm.selectedRecordingId)
+                                vm.gongTesting -> vm.stopTestGong()
+                                else -> vm.testGong()
+                            }
+                        },
+                        enabled = !vm.guidedMode || previewable,
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(
+                            when {
+                                !sounding -> Icons.Filled.PlayArrow
+                                vm.guidedMode -> Icons.Filled.Pause
+                                else -> Icons.Filled.Close
+                            },
+                            contentDescription = when {
+                                sounding -> "Stop"
+                                vm.guidedMode -> "Play the chosen recording at this volume"
+                                else -> "Ring the gong at this volume"
+                            },
+                        )
                     }
                 }
-                Spacer(Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                ) {
-                    // One test button for the one slider: the recording in a guided sit,
-                    // the gong otherwise.
-                    if (vm.canPreviewRecording) {
-                        FilledTonalButton(onClick = { vm.testRecording() }) { Text("Test recording") }
-                    } else {
-                        FilledTonalButton(onClick = { vm.testGong() }) { Text("Test gong") }
+                if (!vm.guidedMode) {
+                    Spacer(Modifier.height(16.dp))
+                    Text("Gong", style = MaterialTheme.typography.labelLarge)
+                    Spacer(Modifier.height(6.dp))
+                    // Single-choice segmented control: equal-width segments that share the row width,
+                    // so labels can't overflow/wrap even at large font scales (e.g. Samsung One UI).
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        GongType.entries.forEachIndexed { index, type ->
+                            SegmentedButton(
+                                selected = vm.gongType == type,
+                                onClick = { vm.updateGongType(type) },
+                                shape = SegmentedButtonDefaults.itemShape(index = index, count = GongType.entries.size),
+                            ) { Text(type.label, maxLines = 1) }
+                        }
                     }
-                    OutlinedButton(onClick = { vm.stopTestGong() }) { Text("Stop") }
                 }
             }
         }
 
         Spacer(Modifier.height(16.dp))
-        when {
-            vm.hcConnected -> Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "✓ Syncing to Health Connect",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                IconButton(onClick = {
-                    vm.syncAllSessions { count ->
-                        val msg = when {
-                            count < 0 -> "Connect to Health Connect first"
-                            else -> "Synced $count sit${if (count == 1) "" else "s"} to Health Connect"
-                        }
-                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                    }
-                }) {
-                    Icon(
-                        Icons.Filled.Sync,
-                        contentDescription = "Sync past sits to Health Connect",
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
-            vm.hcAvailable -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                OutlinedButton(onClick = {
-                    runCatching { hcLauncher.launch(vm.hcPermissions) }
-                        .onFailure {
-                            Toast.makeText(
-                                context,
-                                "Couldn't open Health Connect: ${it.javaClass.simpleName}: ${it.message}",
-                                Toast.LENGTH_LONG,
-                            ).show()
-                        }
-                }) {
-                    Text("Connect to Health Connect")
-                }
-                TextButton(onClick = {
-                    val perApp = Intent("android.health.connect.action.MANAGE_HEALTH_PERMISSIONS")
-                        .putExtra(Intent.EXTRA_PACKAGE_NAME, "nishparadox.mastishka")
-                    val home = Intent("androidx.health.connect.action.HEALTH_CONNECT_SETTINGS")
-                    runCatching { hcSettingsLauncher.launch(perApp) }
-                        .recoverCatching { hcSettingsLauncher.launch(home) }
-                        .onFailure {
-                            Toast.makeText(context, "Couldn't open Health Connect settings", Toast.LENGTH_LONG).show()
-                        }
-                }) { Text("Or grant in Health Connect settings") }
-            }
-            vm.hcUpdateRequired -> Text(
-                "Update Health Connect to sync your sits",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-            )
-            else -> Text(
-                "Health Connect not available on this device",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
-            )
-        }
 
-        Spacer(Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Checkbox(
-                checked = vm.monitorHeartRate && vm.hcConnected,
-                onCheckedChange = { vm.updateMonitorHeartRate(it) },
-                enabled = vm.hcConnected,
-            )
-            Spacer(Modifier.width(4.dp))
+        // Health: Health Connect sync and heart-rate capture, as one group.
+        Card(colors = surface, modifier = Modifier.fillMaxWidth()) {
             Column {
-                Text(
-                    "Monitor heart rate",
-                    color = if (vm.hcConnected) MaterialTheme.colorScheme.onBackground
-                    else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
+                SettingRow(
+                    icon = Icons.Filled.Favorite,
+                    title = "Health Connect",
+                    supporting = when {
+                        vm.hcConnected -> "Syncing your sits"
+                        vm.hcAvailable -> "Not connected"
+                        vm.hcUpdateRequired -> "Update Health Connect to sync your sits"
+                        else -> "Not available on this device"
+                    },
+                ) {
+                    when {
+                        vm.hcConnected -> IconButton(onClick = {
+                            vm.syncAllSessions { count ->
+                                val msg = when {
+                                    count < 0 -> "Connect to Health Connect first"
+                                    else -> "Synced $count sit${if (count == 1) "" else "s"} to Health Connect"
+                                }
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            }
+                        }) {
+                            Icon(
+                                Icons.Filled.Sync,
+                                contentDescription = "Sync past sits to Health Connect",
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        vm.hcAvailable -> FilledTonalButton(onClick = {
+                            runCatching { hcLauncher.launch(vm.hcPermissions) }
+                                .onFailure {
+                                    Toast.makeText(
+                                        context,
+                                        "Couldn't open Health Connect: ${it.javaClass.simpleName}: ${it.message}",
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                }
+                        }) { Text("Connect") }
+                    }
+                }
+                if (vm.hcAvailable && !vm.hcConnected) {
+                    TextButton(
+                        onClick = {
+                            val perApp = Intent("android.health.connect.action.MANAGE_HEALTH_PERMISSIONS")
+                                .putExtra(Intent.EXTRA_PACKAGE_NAME, context.packageName)
+                            val home = Intent("androidx.health.connect.action.HEALTH_CONNECT_SETTINGS")
+                            runCatching { hcSettingsLauncher.launch(perApp) }
+                                .recoverCatching { hcSettingsLauncher.launch(home) }
+                                .onFailure {
+                                    Toast.makeText(context, "Couldn't open Health Connect settings", Toast.LENGTH_LONG).show()
+                                }
+                        },
+                        modifier = Modifier.padding(start = 52.dp),
+                    ) { Text("Or grant in Health Connect settings") }
+                }
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = 60.dp),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
                 )
-                if (!vm.hcConnected) {
-                    Text(
-                        "Connect to Health Connect to enable",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
+                SettingRow(
+                    icon = Icons.Filled.MonitorHeart,
+                    title = "Monitor heart rate",
+                    supporting = if (vm.hcConnected) "During each sit, from your band"
+                    else "Connect to Health Connect to enable",
+                    enabled = vm.hcConnected,
+                ) {
+                    Switch(
+                        checked = vm.monitorHeartRate && vm.hcConnected,
+                        onCheckedChange = { vm.updateMonitorHeartRate(it) },
+                        enabled = vm.hcConnected,
                     )
                 }
             }
         }
-
         Spacer(Modifier.height(16.dp))
-        TextButton(onClick = onHistory) {
-            Icon(Icons.Filled.History, contentDescription = null)
-            Spacer(Modifier.width(6.dp))
-            Text("Past sits")
+    }
+}
+
+/**
+ * Volume as one thick horizontal bar: the filled part is the level, the percentage sits inside
+ * it. Tap or drag anywhere along it to set the level.
+ */
+@Composable
+private fun VolumeBar(value: Float, onChange: (Float) -> Unit, modifier: Modifier = Modifier) {
+    val set by rememberUpdatedState(onChange)
+    var width by remember { mutableIntStateOf(1) }
+    // Whole percents only, so the number shown is exactly the level set.
+    fun at(x: Float) = set((x / width).coerceIn(0f, 1f).let { kotlin.math.round(it * 100) / 100f })
+    Box(
+        modifier = modifier
+            .height(48.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+            .onSizeChanged { width = it.width.coerceAtLeast(1) }
+            .pointerInput(Unit) { detectTapGestures { at(it.x) } }
+            .pointerInput(Unit) { detectHorizontalDragGestures { change, _ -> at(change.position.x) } }
+            .semantics {
+                contentDescription = "Volume"
+                progressBarRangeInfo = ProgressBarRangeInfo(value, 0f..1f)
+                setProgress { set(it.coerceIn(0f, 1f)); true }
+            },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Box(
+            Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(value.coerceIn(0f, 1f))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.38f))
+        )
+        Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.VolumeUp, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(10.dp))
+            Text("${(value * 100).toInt()}%", style = MaterialTheme.typography.titleSmall)
         }
-        Spacer(Modifier.height(8.dp))
+    }
+}
+
+/** One row of a settings group: leading icon, title with a supporting line, trailing control. */
+@Composable
+private fun SettingRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    supporting: String,
+    enabled: Boolean = true,
+    onClick: (() -> Unit)? = null,
+    trailing: @Composable () -> Unit,
+) {
+    val fade = if (enabled) 1f else 0.45f
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary.copy(alpha = fade))
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = MaterialTheme.colorScheme.onSurface.copy(alpha = fade))
+            Text(
+                supporting,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f * fade),
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Box(contentAlignment = Alignment.Center) { trailing() }
     }
 }
 
@@ -511,6 +618,13 @@ private fun GuidedCard(
     onAdd: (Uri) -> Unit,
     onRemove: (String) -> Unit,
     onMore: () -> Unit,
+    previewId: String?,
+    previewPlaying: Boolean,
+    previewPosition: Long,
+    previewDuration: Long,
+    onTogglePreview: (String) -> Unit,
+    onSeekPreview: (Long) -> Unit,
+    onStopPreview: () -> Unit,
 ) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onAdd(uri)
@@ -535,61 +649,88 @@ private fun GuidedCard(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
-        Column(Modifier.padding(start = 8.dp, end = 16.dp, top = 20.dp, bottom = 12.dp)) {
+        Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 20.dp, bottom = 12.dp)) {
             Text(
                 "Guided meditation",
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(start = 12.dp),
+                modifier = Modifier.padding(start = 8.dp),
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
+            // Each recording is a rounded tile; the chosen one is shaded in the app's mint.
             recordings.forEach { r ->
                 val downloading = progress[r.id]
-                Row(
+                val selected = r.id == selectedId
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
+                        .padding(vertical = 3.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(
+                            if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
+                        )
                         .combinedClickable(
                             onClick = { onSelect(r.id) },
                             onLongClick = { if (r.downloaded) removing = r },
                         )
-                        .padding(vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .padding(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
                 ) {
-                    RadioButton(selected = r.id == selectedId, onClick = { onSelect(r.id) })
-                    Text(r.title, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.width(8.dp))
-                    when {
-                        // Downloading: a ring that fills, with the percentage beside it.
-                        downloading != null -> {
-                            Text("${(downloading * 100).toInt()}%", style = MaterialTheme.typography.labelLarge, color = faint)
-                            Spacer(Modifier.width(8.dp))
-                            CircularProgressIndicator(
-                                progress = { downloading },
-                                modifier = Modifier.size(22.dp),
-                                strokeWidth = 3.dp,
-                            )
-                        }
-                        // On the phone: its length.
-                        r.downloaded -> Text(
-                            if (r.durationMillis > 0) formatClock(r.durationMillis) else "–",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = faint,
-                        )
-                        // Not yet downloaded: how big it is, and a download icon.
-                        else -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
                             Text(
-                                "${formatClock(r.durationMillis)} · ${"%.0f".format(r.sizeBytes / 1_048_576.0)} MB",
+                                r.title,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                                fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            // Supporting line: length, plus what downloading it involves.
+                            Text(
+                                when {
+                                    downloading != null -> "Downloading ${(downloading * 100).toInt()}%"
+                                    r.downloaded -> if (r.durationMillis > 0) formatClock(r.durationMillis) else "–"
+                                    else -> "${formatClock(r.durationMillis)} · ${"%.0f".format(r.sizeBytes / 1_048_576.0)} MB"
+                                },
                                 style = MaterialTheme.typography.labelMedium,
                                 color = faint,
                             )
-                            Spacer(Modifier.width(6.dp))
-                            Icon(
-                                Icons.Filled.Download,
-                                contentDescription = "Download",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp),
-                            )
                         }
+                        Spacer(Modifier.width(8.dp))
+                        // Trailing control: download progress, preview play/pause, or download.
+                        Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                            when {
+                                downloading != null -> CircularProgressIndicator(
+                                    progress = { downloading },
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 3.dp,
+                                )
+                                r.downloaded -> {
+                                    val playingThis = previewId == r.id && previewPlaying
+                                    IconButton(onClick = { onTogglePreview(r.id) }) {
+                                        Icon(
+                                            if (playingThis) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                            contentDescription = if (playingThis) "Pause preview" else "Preview this recording",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                }
+                                else -> Icon(
+                                    Icons.Filled.Download,
+                                    contentDescription = "Download",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
+                        }
+                    }
+                    if (previewId == r.id) {
+                        PreviewSeekBar(
+                            position = previewPosition,
+                            duration = previewDuration,
+                            onSeek = onSeekPreview,
+                            onClose = onStopPreview,
+                        )
                     }
                 }
             }
@@ -606,6 +747,39 @@ private fun GuidedCard(
                 Spacer(Modifier.width(8.dp))
                 Text("Add your own recording")
             }
+        }
+    }
+}
+
+/** Seek bar under the recording being previewed: drag to any point, ✕ to stop. */
+@Composable
+private fun PreviewSeekBar(position: Long, duration: Long, onSeek: (Long) -> Unit, onClose: () -> Unit) {
+    // While the thumb is being dragged it follows the finger, not the player.
+    var dragging by remember { mutableStateOf<Float?>(null) }
+    val max = duration.coerceAtLeast(1L).toFloat()
+    val shown = dragging ?: position.toFloat().coerceIn(0f, max)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Slider(
+            value = shown,
+            onValueChange = { dragging = it },
+            onValueChangeFinished = {
+                dragging?.let { onSeek(it.toLong()) }
+                dragging = null
+            },
+            valueRange = 0f..max,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "${formatClock(shown.toLong())} / ${formatClock(duration)}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        )
+        IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
+            Icon(Icons.Filled.Close, contentDescription = "Stop preview", modifier = Modifier.size(18.dp))
         }
     }
 }

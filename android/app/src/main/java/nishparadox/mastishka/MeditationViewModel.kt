@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
@@ -335,10 +336,12 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         // A preview that is playing follows the slider, so the level can be set by ear.
         val gain = volumeGain(gongVolume)
         testPlayer?.let { runCatching { it.setVolume(gain, gain) } }
+        previewPlayer?.let { runCatching { it.setVolume(gain, gain) } }
     }
 
     fun startSit() {
-        stopTestGong() // a preview must not play over the sit
+        stopTestGong() // nothing else may play over the sit
+        stopPreview()
         selectedPeople.clear()
         lastSitHr = null
         val rec = selectedRecording.takeIf { guidedMode && it?.downloaded == true }
@@ -365,6 +368,8 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         if (enabled) {
             refreshRecordings()
             matchPracticeTo(selectedRecording)
+        } else {
+            stopPreview()
         }
     }
 
@@ -386,6 +391,7 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Choose a recording. One that is not on the phone yet starts downloading right away. */
     fun selectRecording(id: String) {
+        if (previewId != null && previewId != id) stopPreview() // previewing something else
         selectedRecordingId = id
         viewModelScope.launch { settings.setGuideSelected(id) }
         val recording = recordings.firstOrNull { it.id == id }
@@ -579,6 +585,7 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Delete a recording from the phone. A built-in one goes back to "tap to download". */
     fun removeRecording(id: String) {
+        if (previewId == id) stopPreview()
         viewModelScope.launch {
             withContext(Dispatchers.IO) { File(guideDir(), recordingFileName(id)).delete() }
             refreshRecordings()
@@ -824,54 +831,148 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         player.setOnCompletionListener { stopTestGong() }
         player.prepareAsync()
         testPlayer = player
+        gongTesting = true
     }
 
     fun stopTestGong() {
-        previewStop?.cancel()
-        previewStop = null
         testPlayer?.let { runCatching { it.release() } }
         testPlayer = null
+        gongTesting = false
         restoreAlarmVolume()
     }
 
-    private var previewStop: Job? = null
+    /** True while the test gong is sounding — the Sound card's button reads "Stop" then. */
+    var gongTesting by mutableStateOf(false)
+        private set
 
-    /** True when the test button should preview the chosen recording rather than the gong. */
-    val canPreviewRecording: Boolean get() = guidedMode && selectedRecording?.downloaded == true
+    // ---------- Recording preview (seekable, before a sit) ----------
+
+    /** Id of the recording being previewed in the Guided list, or null. */
+    var previewId by mutableStateOf<String?>(null)
+        private set
+    var previewPlaying by mutableStateOf(false)
+        private set
+    var previewPosition by mutableStateOf(0L)
+        private set
+    var previewDuration by mutableStateOf(0L)
+        private set
+
+    private var previewPlayer: MediaPlayer? = null
+    private var previewPrepared = false
+    private var previewTicker: Job? = null
+    private var previewFocus: AudioFocusRequest? = null
+
+    private fun mediaSpeechAttributes(): AudioAttributes =
+        AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+            .build()
 
     /**
-     * Play the first seconds of the chosen recording exactly as a guided sit would — as media,
-     * at the slider's level on top of the phone's media volume — so the level can be set
-     * before sitting. Stops by itself.
+     * The play button on a recording's row: start previewing it, or pause/resume if it is the
+     * one already open. A preview plays exactly as a sit would (media, at the slider's level)
+     * and can be dragged to any point, so you can hear what kind of sit it is. It is never
+     * saved as a sit.
      */
-    fun testRecording() {
+    fun togglePreview(id: String) {
+        if (previewId == id) {
+            val player = previewPlayer ?: return
+            if (!previewPrepared) return
+            if (previewPlaying) {
+                runCatching { player.pause() }
+                previewPlaying = false
+            } else if (requestPreviewFocus()) {
+                runCatching { player.start() }
+                previewPlaying = true
+            }
+            return
+        }
+        stopPreview()
         stopTestGong()
-        val rec = selectedRecording?.takeIf { it.downloaded } ?: return
+        val rec = recordings.firstOrNull { it.id == id && it.downloaded } ?: return
         val player = MediaPlayer()
         try {
-            player.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
+            player.setAudioAttributes(mediaSpeechAttributes())
             player.setDataSource(File(guideDir(), recordingFileName(rec.id)).absolutePath)
             val gain = volumeGain(gongVolume)
             player.setVolume(gain, gain)
-            player.setOnPreparedListener { it.start() }
-            player.setOnCompletionListener { stopTestGong() }
-            player.setOnErrorListener { _, _, _ -> stopTestGong(); true }
+            player.setOnPreparedListener { p ->
+                if (previewPlayer !== p) return@setOnPreparedListener
+                previewPrepared = true
+                previewDuration = p.duration.toLong().coerceAtLeast(0)
+                if (requestPreviewFocus()) {
+                    p.start()
+                    previewPlaying = true
+                }
+            }
+            player.setOnCompletionListener { p -> if (previewPlayer === p) stopPreview() }
+            player.setOnErrorListener { p, _, _ ->
+                if (previewPlayer === p) {
+                    stopPreview()
+                    guideMessage = "Couldn't play that recording."
+                }
+                true
+            }
+            previewPlayer = player
+            previewPrepared = false
+            previewId = id
+            previewPosition = 0L
+            previewDuration = rec.durationMillis
             player.prepareAsync()
-            testPlayer = player
-            previewStop = viewModelScope.launch {
-                delay(PREVIEW_MILLIS)
-                previewStop = null
-                stopTestGong()
+            previewTicker = viewModelScope.launch {
+                while (true) {
+                    delay(250)
+                    if (previewPrepared && previewPlaying) {
+                        previewPosition = runCatching { player.currentPosition.toLong() }.getOrDefault(previewPosition)
+                    }
+                }
             }
         } catch (e: Exception) {
             runCatching { player.release() }
+            stopPreview()
             guideMessage = "Couldn't play that recording."
         }
+    }
+
+    /** Jump the open preview to [millis]. */
+    fun seekPreview(millis: Long) {
+        val player = previewPlayer ?: return
+        if (!previewPrepared) return
+        val target = millis.coerceIn(0, previewDuration.coerceAtLeast(0))
+        runCatching { player.seekTo(target, MediaPlayer.SEEK_CLOSEST) }
+        previewPosition = target
+    }
+
+    fun stopPreview() {
+        previewTicker?.cancel()
+        previewTicker = null
+        previewPlayer?.let { runCatching { it.release() } }
+        previewPlayer = null
+        previewPrepared = false
+        previewPlaying = false
+        previewId = null
+        previewPosition = 0L
+        previewFocus?.let {
+            (getApplication<Application>().getSystemService(Context.AUDIO_SERVICE) as AudioManager)
+                .abandonAudioFocusRequest(it)
+        }
+        previewFocus = null
+    }
+
+    /** Take audio focus for the preview; losing it (a call, another player) pauses it. */
+    private fun requestPreviewFocus(): Boolean {
+        val am = getApplication<Application>().getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val request = previewFocus ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(mediaSpeechAttributes())
+            .setOnAudioFocusChangeListener { change ->
+                if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                    previewPlayer?.let { p -> runCatching { if (previewPrepared && p.isPlaying) p.pause() } }
+                    previewPlaying = false
+                }
+            }
+            .build()
+            .also { previewFocus = it }
+        return am.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
     }
 
     // Max the alarm stream only while the test gong sounds, restoring the user's level after.
@@ -897,12 +998,10 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         stopTestGong()
+        stopPreview()
         super.onCleared()
     }
 }
-
-/** How long the test button previews a recording before stopping by itself. */
-private const val PREVIEW_MILLIS = 20_000L
 
 /** Heart-rate summary for a sit: avg/min/max bpm + a downsampled series for charting. */
 data class HrSummary(val avg: Int, val min: Int, val max: Int, val series: List<Int>) {
