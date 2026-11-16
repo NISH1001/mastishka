@@ -831,13 +831,19 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         player.setOnCompletionListener { stopTestGong() }
         player.prepareAsync()
         testPlayer = player
+        gongTesting = true
     }
 
     fun stopTestGong() {
         testPlayer?.let { runCatching { it.release() } }
         testPlayer = null
+        gongTesting = false
         restoreAlarmVolume()
     }
+
+    /** True while the test gong is sounding — the Sound card's button reads "Stop" then. */
+    var gongTesting by mutableStateOf(false)
+        private set
 
     // ---------- Recording preview (seekable, before a sit) ----------
 

@@ -1,7 +1,7 @@
 # Guided meditation (Android) — design
 
 **Date:** 2026-11-15
-**Status:** built on `feature/guided-meditation` (v0.6.0); tried on a Pixel 9
+**Status:** released in v0.6.0; preview player and layout refinements in v0.6.1
 
 ## Intent
 
@@ -55,7 +55,11 @@ who installs the app.
 between launches. The Practice card is unchanged. In Silent, the "Sit duration" card shows
 as today. In Guided it is replaced by a "Guided meditation" card:
 
-- One row per recording, single choice. Built-in recordings first, then the user's own.
+- One rounded tile per recording, single choice; the chosen tile is shaded. Built-in
+  recordings first, then the user's own. Length sits under the title.
+- A recording on the phone has a play button: it opens a seek bar inside the tile and plays
+  from any point, at the Volume level, so you can hear what kind of sit it is before
+  beginning. It stops when a sit begins, another recording is chosen, or it is closed.
 - A recording not yet on the phone shows its length, size and a download icon. Choosing it
   starts the download; the icon becomes a progress ring with the percentage. Once on the
   phone the row shows its length.
@@ -90,8 +94,9 @@ their own sign-in.
 recording downloads, the button shows the progress ring and percentage in place of the play
 icon. It does not start by itself when the download ends.
 
-**Common settings stay on the same screen, below Begin sit** (no separate settings page).
-The gong card's slider is "Volume" and applies to both the gong and the recording.
+**Common settings stay on the same screen, below Begin sit** (no separate settings page),
+as three grouped cards: Past sits (history and insights), Sound (below), and Health (Health
+Connect status with sync or connect, and a heart-rate switch).
 
 **Sit screen.** Appears immediately, as today: remaining time and End sit, which works at any
 moment. A guided sit adds the recording's name and a Pause/Resume button.
@@ -114,8 +119,10 @@ moment. A guided sit adds the recording's name and a Pause/Resume button.
   so the phone's alarm volume does not change what the slider means.
 - Recording: plays as media. The slider scales it on top of the phone's media volume, which
   the app never changes; the side buttons work during the sit.
-- In Guided with a recording chosen, the Sound card's test button is "Test recording": it
-  plays the first 20 seconds as a sit would. The slider changes a playing preview live.
+- Volume is one thick bar with the percentage inside it; tap or drag along it. The button
+  beside it plays what this sit will play, at that level: the gong in Silent, the chosen
+  recording (the same preview as its tile) in Guided. Changing the level while it sounds
+  takes effect live. The gong picker shows only in Silent.
 - Tapping Begin in Guided warns first if the recording would be inaudible: slider at 0%,
   media volume at zero, or Do Not Disturb in total-silence mode. Other Do Not Disturb modes
   normally allow media; detection beyond total silence is not attempted.
