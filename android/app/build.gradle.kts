@@ -26,6 +26,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // `-PidSuffix=.dev` installs a test copy NEXT TO the real app (own data, own history)
+            // instead of replacing it — for trying a branch on a phone that holds real sits.
+            (project.findProperty("idSuffix") as String?)?.let { applicationIdSuffix = it }
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(

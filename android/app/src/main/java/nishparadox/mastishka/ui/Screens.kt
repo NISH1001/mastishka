@@ -39,9 +39,12 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -54,6 +57,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -65,6 +69,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -100,6 +105,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.health.connect.client.PermissionController
@@ -110,6 +116,7 @@ import nishparadox.mastishka.MeditationViewModel
 import nishparadox.mastishka.data.GongType
 import nishparadox.mastishka.data.Granularity
 import nishparadox.mastishka.data.Person
+import nishparadox.mastishka.data.Recording
 import nishparadox.mastishka.data.Session
 import nishparadox.mastishka.service.TimerState
 import nishparadox.mastishka.service.formatClock
@@ -131,6 +138,7 @@ fun SetupScreen(
     vm: MeditationViewModel,
     onStart: () -> Unit,
     onHistory: () -> Unit,
+    onMoreRecordings: () -> Unit = {},
 ) {
     val scroll = rememberScrollState()
     val context = LocalContext.current
@@ -142,6 +150,28 @@ fun SetupScreen(
         ActivityResultContracts.StartActivityForResult()
     ) { vm.refreshHealthConnect() }
     LaunchedEffect(Unit) { vm.refreshHealthConnect() }
+    // A failed download or add: say so once.
+    LaunchedEffect(vm.guideMessage) {
+        vm.guideMessage?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            vm.clearGuideMessage()
+        }
+    }
+    // Guided sit about to start with the recording inaudible: say why, let them start anyway.
+    var silenceWarning by remember { mutableStateOf<String?>(null) }
+    silenceWarning?.let { message ->
+        AlertDialog(
+            onDismissRequest = { silenceWarning = null },
+            title = { Text("You won't hear the recording") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { silenceWarning = null; onStart() }) { Text("Begin anyway") }
+            },
+            dismissButton = {
+                TextButton(onClick = { silenceWarning = null }) { Text("Cancel") }
+            },
+        )
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -212,7 +242,19 @@ fun SetupScreen(
                     .padding(6.dp),
             )
         }
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.height(20.dp))
+
+        // Silent sit (timer + gong) or guided sit (one of the user's recordings).
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            listOf(false to "Silent", true to "Guided").forEachIndexed { index, (guided, label) ->
+                SegmentedButton(
+                    selected = vm.guidedMode == guided,
+                    onClick = { vm.updateGuidedMode(guided) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = 2),
+                ) { Text(label, maxLines = 1) }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
 
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(20.dp)) {
@@ -243,7 +285,17 @@ fun SetupScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        if (vm.guidedMode) {
+            GuidedCard(
+                recordings = vm.recordings,
+                selectedId = vm.selectedRecordingId,
+                progress = vm.downloadProgress,
+                onSelect = vm::selectRecording,
+                onAdd = vm::addRecording,
+                onRemove = vm::removeRecording,
+                onMore = onMoreRecordings,
+            )
+        } else Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Sit duration", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(12.dp))
@@ -267,13 +319,32 @@ fun SetupScreen(
         Spacer(Modifier.height(24.dp))
 
         Button(
-            onClick = onStart,
+            onClick = {
+                val warning = if (vm.guidedMode) vm.guidedSilenceWarning() else null
+                if (warning != null) silenceWarning = warning else onStart()
+            },
+            enabled = vm.canBegin,
             modifier = Modifier.fillMaxWidth().height(60.dp),
             shape = RoundedCornerShape(16.dp),
         ) {
-            Icon(Icons.Filled.PlayArrow, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Begin sit", fontSize = 18.sp)
+            // While the chosen recording downloads, the play icon is a progress ring.
+            val downloading = if (vm.guidedMode) vm.downloadProgress[vm.selectedRecordingId] else null
+            if (downloading != null) {
+                CircularProgressIndicator(
+                    progress = { downloading },
+                    modifier = Modifier.size(22.dp),
+                    strokeWidth = 3.dp,
+                )
+                Spacer(Modifier.width(10.dp))
+                Text("Downloading ${(downloading * 100).toInt()}%", fontSize = 18.sp)
+            } else {
+                Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (vm.guidedMode && vm.selectedRecording == null) "Choose a recording" else "Begin sit",
+                    fontSize = 18.sp,
+                )
+            }
         }
 
         Spacer(Modifier.height(22.dp))
@@ -285,8 +356,13 @@ fun SetupScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.VolumeUp, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(8.dp))
-                    Text("Gong volume — ${(vm.gongVolume * 100).toInt()}%", style = MaterialTheme.typography.titleMedium)
+                    Text("Volume — ${(vm.gongVolume * 100).toInt()}%", style = MaterialTheme.typography.titleMedium)
                 }
+                Text(
+                    "For the gong, and for the recording in a guided sit",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
                 Slider(
                     value = vm.gongVolume,
                     onValueChange = { vm.updateGongVolume(it) },
@@ -311,7 +387,13 @@ fun SetupScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                 ) {
-                    FilledTonalButton(onClick = { vm.testGong() }) { Text("Test gong") }
+                    // One test button for the one slider: the recording in a guided sit,
+                    // the gong otherwise.
+                    if (vm.canPreviewRecording) {
+                        FilledTonalButton(onClick = { vm.testRecording() }) { Text("Test recording") }
+                    } else {
+                        FilledTonalButton(onClick = { vm.testGong() }) { Text("Test gong") }
+                    }
                     OutlinedButton(onClick = { vm.stopTestGong() }) { Text("Stop") }
                 }
             }
@@ -415,6 +497,119 @@ fun SetupScreen(
     }
 }
 
+/**
+ * Guided mode's stand-in for the duration card: built-in recordings (downloaded once, on tap,
+ * from their publisher) and any the user added, one to choose. Long-press removes one.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun GuidedCard(
+    recordings: List<Recording>,
+    selectedId: String,
+    progress: Map<String, Float>,
+    onSelect: (String) -> Unit,
+    onAdd: (Uri) -> Unit,
+    onRemove: (String) -> Unit,
+    onMore: () -> Unit,
+) {
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) onAdd(uri)
+    }
+    val faint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+    var removing by remember { mutableStateOf<Recording?>(null) }
+    removing?.let { r ->
+        AlertDialog(
+            onDismissRequest = { removing = null },
+            title = { Text("Remove from this phone?") },
+            text = {
+                Text(
+                    if (r.builtIn) "“${r.title}” will be deleted. You can download it again any time."
+                    else "“${r.title}” will be deleted from Mastishka. Your original file is not touched."
+                )
+            },
+            confirmButton = { TextButton(onClick = { onRemove(r.id); removing = null }) { Text("Remove") } },
+            dismissButton = { TextButton(onClick = { removing = null }) { Text("Cancel") } },
+        )
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(Modifier.padding(start = 8.dp, end = 16.dp, top = 20.dp, bottom = 12.dp)) {
+            Text(
+                "Guided meditation",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(start = 12.dp),
+            )
+            Spacer(Modifier.height(6.dp))
+            recordings.forEach { r ->
+                val downloading = progress[r.id]
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .combinedClickable(
+                            onClick = { onSelect(r.id) },
+                            onLongClick = { if (r.downloaded) removing = r },
+                        )
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = r.id == selectedId, onClick = { onSelect(r.id) })
+                    Text(r.title, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.width(8.dp))
+                    when {
+                        // Downloading: a ring that fills, with the percentage beside it.
+                        downloading != null -> {
+                            Text("${(downloading * 100).toInt()}%", style = MaterialTheme.typography.labelLarge, color = faint)
+                            Spacer(Modifier.width(8.dp))
+                            CircularProgressIndicator(
+                                progress = { downloading },
+                                modifier = Modifier.size(22.dp),
+                                strokeWidth = 3.dp,
+                            )
+                        }
+                        // On the phone: its length.
+                        r.downloaded -> Text(
+                            if (r.durationMillis > 0) formatClock(r.durationMillis) else "–",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = faint,
+                        )
+                        // Not yet downloaded: how big it is, and a download icon.
+                        else -> {
+                            Text(
+                                "${formatClock(r.durationMillis)} · ${"%.0f".format(r.sizeBytes / 1_048_576.0)} MB",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = faint,
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Icon(
+                                Icons.Filled.Download,
+                                contentDescription = "Download",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            // Recordings dhamma.org serves only after the old-student login: opened inside
+            // Mastishka, where the person signs in and saves what they open.
+            TextButton(onClick = onMore) {
+                Icon(Icons.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Explore more sittings", textAlign = TextAlign.Start)
+            }
+            TextButton(onClick = { picker.launch(arrayOf("audio/*", "application/ogg")) }) {
+                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Add your own recording")
+            }
+        }
+    }
+}
+
 @Composable
 private fun DurationPicker(totalMinutes: Int, onChange: (Int) -> Unit) {
     val hours = totalMinutes / 60
@@ -438,7 +633,7 @@ private fun Stepper(label: String, value: Int, onDelta: (Int) -> Unit) {
 // ---------------------------------------------------------------- Sit
 
 @Composable
-fun SitScreen(state: TimerState, onEnd: () -> Unit) {
+fun SitScreen(state: TimerState, onEnd: () -> Unit, onPause: () -> Unit = {}, onResume: () -> Unit = {}) {
     KeepScreenOn()
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -460,7 +655,7 @@ fun SitScreen(state: TimerState, onEnd: () -> Unit) {
                 )
             } else {
                 Text(
-                    "REMAINING",
+                    if (state.paused) "PAUSED" else "REMAINING",
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
@@ -469,7 +664,31 @@ fun SitScreen(state: TimerState, onEnd: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 Text(formatClock(state.remainingMillis), fontSize = 72.sp, fontWeight = FontWeight.Light)
             }
-            Spacer(Modifier.height(72.dp))
+            if (state.guided) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    if (state.guideFailed) "Couldn't play “${state.guideTitle}” — continuing as a silent sit"
+                    else state.guideTitle,
+                    textAlign = TextAlign.Center,
+                    color = if (state.guideFailed) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                )
+            }
+            // Pause exists only while a recording is (or could be) playing — not in overtime.
+            val pausable = state.guided && !state.guideFailed && (state.paused || !state.inOvertime)
+            Spacer(Modifier.height(if (pausable) 48.dp else 72.dp))
+            if (pausable) {
+                FilledTonalButton(
+                    onClick = if (state.paused) onResume else onPause,
+                    modifier = Modifier.fillMaxWidth(0.72f).height(64.dp),
+                    shape = RoundedCornerShape(20.dp),
+                ) {
+                    Icon(if (state.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (state.paused) "Resume" else "Pause", fontSize = 18.sp)
+                }
+                Spacer(Modifier.height(16.dp))
+            }
             OutlinedButton(
                 onClick = onEnd,
                 modifier = Modifier.fillMaxWidth(0.72f).height(72.dp),
@@ -985,6 +1204,13 @@ fun HistoryScreen(
                         Column(Modifier.padding(end = 16.dp, top = 12.dp, bottom = 12.dp)) {
                             Text(s.type, style = MaterialTheme.typography.titleMedium)
                             Text(fmt.format(Date(s.startedAt)), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            if (s.guide.isNotEmpty()) {
+                                Text(
+                                    "Guided · ${s.guide}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                )
+                            }
                             if (s.device.isNotEmpty()) {
                                 Text(
                                     s.device,

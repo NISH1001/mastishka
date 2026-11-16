@@ -67,6 +67,8 @@ data class Session(
     // (from its sit file's name, e.g. "mac-m3-max-16a484"). Not part of the schema-1 JSON —
     // in the shared folder the filename carries device identity.
     val device: String = "",
+    // Guided sit: the recording's title ("" = silent sit).
+    val guide: String = "",
 ) {
     val overtimeMillis: Long get() = (totalMillis - plannedMillis).coerceAtLeast(0)
     val hasHeartRate: Boolean get() = hrAvg > 0
@@ -122,7 +124,7 @@ interface SessionDao {
 
 // ---------- Database ----------
 
-@Database(entities = [Person::class, Session::class], version = 4, exportSchema = false)
+@Database(entities = [Person::class, Session::class], version = 5, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun personDao(): PersonDao
@@ -155,13 +157,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // v5 adds Session.guide — the recording played during a guided sit ("" = silent).
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sessions ADD COLUMN guide TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "mastishka.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
             }
     }
 }
@@ -232,6 +241,27 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setNepaliTitle(enabled: Boolean) {
         context.dataStore.edit { it[keyNepaliTitle] = enabled }
+    }
+
+    // ---------- Guided sits ----------
+
+    private val keyGuidedMode = booleanPreferencesKey("guided_mode")
+    private val keyGuideSelected = stringPreferencesKey("guide_selected")
+
+    /** Setup-screen switch: false = silent sit, true = guided sit. */
+    val guidedMode: Flow<Boolean> =
+        context.dataStore.data.map { it[keyGuidedMode] ?: false }
+
+    suspend fun setGuidedMode(enabled: Boolean) {
+        context.dataStore.edit { it[keyGuidedMode] = enabled }
+    }
+
+    /** Id of the last-selected recording; empty = none. */
+    val guideSelected: Flow<String> =
+        context.dataStore.data.map { it[keyGuideSelected] ?: "" }
+
+    suspend fun setGuideSelected(id: String) {
+        context.dataStore.edit { it[keyGuideSelected] = id }
     }
 
     // ---------- Drive sync (specs/ecosystem-protocol.md §3–4) ----------

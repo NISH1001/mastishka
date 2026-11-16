@@ -79,7 +79,8 @@ which is the reference implementation.
   "notes": "",
   "type": "Anapana",
   "hrAvg": 0, "hrMin": 0, "hrMax": 0,
-  "hrSeries": ""
+  "hrSeries": "",
+  "guide": ""
 }
 ```
 
@@ -94,6 +95,7 @@ which is the reference implementation.
 | `type` | string | practice name, default `"Meditation"` |
 | `hrAvg`/`hrMin`/`hrMax` | int | heart rate summary; `0` = absent |
 | `hrSeries` | string | comma-separated bpm samples; `""` = absent |
+| `guide` | string | title of the recording played in a guided sit; `""` = silent sit (added in Android 0.6.0; older readers ignore it) |
 
 Rules: writers emit **all** fields (defaults allowed); readers tolerate missing
 fields (apply the defaults above) and **ignore unknown fields**. A reader may
