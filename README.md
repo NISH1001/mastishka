@@ -7,7 +7,7 @@ you**, and the timer keeps counting **overtime** so you know exactly how much lo
 
 | Platform | Where | What |
 |---|---|---|
-| **Android** | [`android/`](android/) · releases tagged `v*` | The full app: sit timer, practice types, metta, notes, heart rate via Health Connect, multi-device history with date/device filters + an Insights tab (practice/heart/calmness charts, mind–body agreement, calendar heatmap), automatic Drive sync |
+| **Android** | [`android/`](android/) · releases tagged `v*` | The full app: sit timer, guided sits (recordings downloaded on demand, never bundled), practice types, metta, notes, heart rate via Health Connect, multi-device history with date/device filters + an Insights tab (practice/heart/calmness charts, mind–body agreement, calendar heatmap), automatic Drive sync |
 | **macOS** | [`macos/`](macos/) · releases tagged `mac-v*` | Minimal menu-bar companion: breathing orb sit, gong, overtime, saves to the shared Drive folder; `mastishka://sit` URL scheme |
 | **Web** | [`docs/`](docs/) → **[nishparadox.com/mastishka](https://nishparadox.com/mastishka/)** | A transient sit in the browser — nothing saved, just open and sit |
 
@@ -34,8 +34,10 @@ The same protocol defines the `mastishka://sit` URL scheme so companion apps (li
 ## Screenshots (Android)
 
 <p>
-  <img src="docs/screenshots/setup.png" width="200" alt="Setup — मस्तिष्क title, practice & duration" />
-  <img src="docs/screenshots/gong.png" width="200" alt="Gong — volume & segmented sound picker" />
+  <img src="docs/screenshots/setup.png" width="200" alt="Setup — मस्तिष्क title, Silent/Guided switch, practice & duration" />
+  <img src="docs/screenshots/guided.png" width="200" alt="Guided — choose a recording; built-in ones download on first use" />
+  <img src="docs/screenshots/guided-sit.png" width="200" alt="Guided sit — countdown, recording name, pause" />
+  <img src="docs/screenshots/gong.png" width="200" alt="Volume for gong and recording, gong sound picker" />
   <img src="docs/screenshots/sit.png" width="200" alt="Sit — countdown" />
   <img src="docs/screenshots/metta.png" width="200" alt="Metta Bhavana" />
   <img src="docs/screenshots/history.png" width="200" alt="History with multi-select delete" />
