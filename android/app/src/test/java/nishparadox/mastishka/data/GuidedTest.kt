@@ -75,6 +75,16 @@ class GuidedTest {
         assertTrue(GUIDE_CATALOG.none { it.id.startsWith("user-") })
     }
 
+    @Test
+    fun `a recording's title says which practice it is for`() {
+        assertEquals("Anapana", practiceFor("Goenka · Mini Anapana"))
+        assertEquals("Anapana", practiceFor("ANAPANA with introduction"))
+        assertEquals("Vipassana", practiceFor("Goenka - Vipassana 1 hour"))
+        assertEquals("Vipassana", practiceFor("English Group Sitting"))
+        assertEquals(null, practiceFor("Zen bell"))
+        assertTrue(GUIDE_CATALOG.all { practiceFor(it.title) != null })
+    }
+
     // ---------- volume curve ----------
 
     @Test

@@ -66,6 +66,19 @@ fun recordingTitle(fileName: String): String {
     return if (dot > 0) fileName.substring(0, dot) else fileName
 }
 
+/**
+ * The practice a recording is for, read from its title, or null when the title doesn't say.
+ * Choosing a recording pre-selects this practice chip (the user can still change it).
+ */
+fun practiceFor(title: String): String? {
+    val t = title.lowercase()
+    return when {
+        "anapana" in t -> "Anapana"
+        "vipassana" in t || "group sitting" in t -> "Vipassana"
+        else -> null
+    }
+}
+
 /** File name under the app's guided folder that holds the recording with this id. */
 fun recordingFileName(id: String): String = if (id.startsWith(USER_PREFIX)) id else "$id.mp3"
 

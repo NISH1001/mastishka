@@ -32,6 +32,7 @@ import nishparadox.mastishka.data.parseHistoryFile
 import nishparadox.mastishka.data.GUIDE_CATALOG
 import nishparadox.mastishka.data.buildLibrary
 import nishparadox.mastishka.data.parseSitLines
+import nishparadox.mastishka.data.practiceFor
 import nishparadox.mastishka.data.recordingFileName
 import nishparadox.mastishka.data.userRecordingFileName
 import nishparadox.mastishka.data.volumeGain
@@ -351,7 +352,18 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
     fun updateGuidedMode(enabled: Boolean) {
         guidedMode = enabled
         viewModelScope.launch { settings.setGuidedMode(enabled) }
-        if (enabled) refreshRecordings()
+        if (enabled) {
+            refreshRecordings()
+            matchPracticeTo(selectedRecording)
+        }
+    }
+
+    /** Pre-select the practice chip a recording is for (Anapana, Vipassana), if its title says. */
+    private fun matchPracticeTo(recording: Recording?) {
+        val practice = recording?.let { practiceFor(it.title) } ?: return
+        if (practice == meditationType) return
+        meditationType = practice
+        viewModelScope.launch { settings.setMeditationType(practice) }
     }
 
     fun clearGuideMessage() {
@@ -366,11 +378,13 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
     fun selectRecording(id: String) {
         selectedRecordingId = id
         viewModelScope.launch { settings.setGuideSelected(id) }
-        if (recordings.firstOrNull { it.id == id }?.downloaded == false) downloadRecording(id)
+        val recording = recordings.firstOrNull { it.id == id }
+        matchPracticeTo(recording)
+        if (recording?.downloaded == false) downloadRecording(id)
     }
 
     /** Re-read the guided folder: which recordings are on the phone, and how long each is. */
-    fun refreshRecordings() {
+    fun refreshRecordings(thenSelect: String? = null) {
         viewModelScope.launch {
             recordings = withContext(Dispatchers.IO) {
                 val files = guideDir().listFiles().orEmpty()
@@ -378,6 +392,8 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
                     .associate { it.name to audioDurationMillis(it) }
                 buildLibrary(GUIDE_CATALOG, files)
             }
+            // A file the user just added: now that it is listed, match its practice too.
+            thenSelect?.let { id -> matchPracticeTo(recordings.firstOrNull { it.id == id }) }
         }
     }
 
@@ -476,7 +492,7 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
     private fun selectRecordingAfterRefresh(id: String) {
         selectedRecordingId = id
         viewModelScope.launch { settings.setGuideSelected(id) }
-        refreshRecordings()
+        refreshRecordings(thenSelect = id)
     }
 
     /** Delete a recording from the phone. A built-in one goes back to "tap to download". */
