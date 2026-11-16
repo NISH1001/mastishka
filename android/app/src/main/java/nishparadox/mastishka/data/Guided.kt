@@ -41,12 +41,64 @@ val GUIDE_CATALOG: List<CatalogEntry> = listOf(
 )
 
 /**
- * Where old students can get the 1-hour group sittings, opened in the browser. Points at the
- * login form (which then forwards to the English group sittings) rather than the listing itself,
- * because the listing greets a logged-out visitor with a bare "not authorized" message.
+ * Start page of the in-app "More Dhamma recordings" browser: dhamma.org's old-student login,
+ * which then forwards to the English group sittings. Those recordings are served only to
+ * logged-in old students, so the app never fetches them by itself — each person signs in with
+ * their own login and saves what they open.
  */
-const val GROUP_SITTINGS_URL =
-    "https://discourses.dhamma.org/login?redirect=%2Frecordings%2Fgroup_sittings%3Flanguages%255Biso_code%255D%3Den"
+const val DHAMMA_RECORDINGS_URL =
+    "https://resources.dhamma.org/login?redirect=%2Frecordings%2Fgroup_sittings%3Flanguages%255Biso_code%255D%3Den"
+
+/** The group sittings list itself — where the in-app browser opens once signed in. */
+const val DHAMMA_SITTINGS_URL =
+    "https://resources.dhamma.org/recordings/group_sittings?languages%5Biso_code%5D=en"
+
+/** Name of the site's sign-in cookie, which the in-app browser keeps between visits. */
+const val DHAMMA_SESSION_COOKIE = "_dhamma_resources_session"
+
+/** The in-app browser stays on the publisher's own sites. */
+fun isDhammaHost(host: String?): Boolean {
+    val h = host?.lowercase() ?: return false
+    return h == "dhamma.org" || h.endsWith(".dhamma.org")
+}
+
+/** True when a URL's path names an audio file (query string ignored). */
+fun isAudioUrl(url: String?): Boolean {
+    val path = (url ?: return false).substringBefore('#').substringBefore('?').lowercase()
+    return path.endsWith(".mp3") || path.endsWith(".m4a") || path.endsWith(".ogg") || path.endsWith(".opus")
+}
+
+/** An audio link found on the page the in-app browser is showing. */
+data class PageRecording(val url: String, val title: String)
+
+/**
+ * A short, readable title from the label a recording carries on the publisher's site. Those
+ * labels repeat themselves ("Group Sitting • Group Sitting • Long Instructions • Group
+ * Sitting • Long Instructions • English • English • Dhamma Setu • 2000"), so: split into
+ * parts, drop repeats, drop the parts every sitting shares ("Group Sitting", "English"), and
+ * say "Vipassana" once in front for a group sitting — which is also what selects the practice.
+ */
+fun tidyRecordingLabel(raw: String, groupSitting: Boolean = false): String {
+    val parts = raw.split('•', '·').map { it.replace(Regex("\\s+"), " ").trim() }.filter { it.isNotEmpty() }
+    val isSitting = groupSitting || parts.any { it.equals("Group Sitting", ignoreCase = true) }
+    val seen = mutableSetOf<String>()
+    val kept = parts.filter { part ->
+        val key = part.lowercase()
+        key != "group sitting" && key != "english" && key != "vipassana" && seen.add(key)
+    }
+    return (if (isSitting) listOf("Vipassana") + kept else kept).joinToString(" · ")
+}
+
+/**
+ * Stored file name for a recording saved from a web page: its tidied title as a user file,
+ * with the audio file's own extension. Falls back to the file's name when there is no title.
+ */
+fun webRecordingFileName(title: String, url: String): String {
+    val path = url.substringBefore('#').substringBefore('?')
+    val base = title.replace(Regex("\\s+"), " ").trim().ifBlank { path.substringAfterLast('/').substringBeforeLast('.') }
+    val ext = path.substringAfterLast('.', "mp3").lowercase().takeIf { it.length in 2..4 } ?: "mp3"
+    return userRecordingFileName(base.take(100).trim() + "." + ext)
+}
 
 /** One row of the Guided list: a catalog recording (downloaded or not) or a user-added file. */
 data class Recording(

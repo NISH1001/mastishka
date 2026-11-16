@@ -114,7 +114,6 @@ import nishparadox.mastishka.HrSummary
 import nishparadox.mastishka.ImportSummary
 import nishparadox.mastishka.MeditationViewModel
 import nishparadox.mastishka.data.GongType
-import nishparadox.mastishka.data.GROUP_SITTINGS_URL
 import nishparadox.mastishka.data.Granularity
 import nishparadox.mastishka.data.Person
 import nishparadox.mastishka.data.Recording
@@ -139,6 +138,7 @@ fun SetupScreen(
     vm: MeditationViewModel,
     onStart: () -> Unit,
     onHistory: () -> Unit,
+    onMoreRecordings: () -> Unit = {},
 ) {
     val scroll = rememberScrollState()
     val context = LocalContext.current
@@ -293,6 +293,7 @@ fun SetupScreen(
                 onSelect = vm::selectRecording,
                 onAdd = vm::addRecording,
                 onRemove = vm::removeRecording,
+                onMore = onMoreRecordings,
             )
         } else Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -386,7 +387,13 @@ fun SetupScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                 ) {
-                    FilledTonalButton(onClick = { vm.testGong() }) { Text("Test gong") }
+                    // One test button for the one slider: the recording in a guided sit,
+                    // the gong otherwise.
+                    if (vm.canPreviewRecording) {
+                        FilledTonalButton(onClick = { vm.testRecording() }) { Text("Test recording") }
+                    } else {
+                        FilledTonalButton(onClick = { vm.testGong() }) { Text("Test gong") }
+                    }
                     OutlinedButton(onClick = { vm.stopTestGong() }) { Text("Stop") }
                 }
             }
@@ -503,8 +510,8 @@ private fun GuidedCard(
     onSelect: (String) -> Unit,
     onAdd: (Uri) -> Unit,
     onRemove: (String) -> Unit,
+    onMore: () -> Unit,
 ) {
-    val context = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onAdd(uri)
     }
@@ -587,15 +594,12 @@ private fun GuidedCard(
                 }
             }
             Spacer(Modifier.height(4.dp))
-            // The 1-hour Vipassana sittings need the old-student login, so the app can't fetch
-            // them: open the page, save the file there, then add it below.
-            TextButton(onClick = {
-                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(GROUP_SITTINGS_URL))) }
-                    .onFailure { Toast.makeText(context, "No browser to open dhamma.org", Toast.LENGTH_LONG).show() }
-            }) {
+            // Recordings dhamma.org serves only after the old-student login: opened inside
+            // Mastishka, where the person signs in and saves what they open.
+            TextButton(onClick = onMore) {
                 Icon(Icons.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("1-hour Vipassana group sitting (old students)", textAlign = TextAlign.Start)
+                Text("Explore more sittings", textAlign = TextAlign.Start)
             }
             TextButton(onClick = { picker.launch(arrayOf("audio/*", "application/ogg")) }) {
                 Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))

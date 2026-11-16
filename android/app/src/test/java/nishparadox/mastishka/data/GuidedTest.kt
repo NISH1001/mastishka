@@ -85,6 +85,66 @@ class GuidedTest {
         assertTrue(GUIDE_CATALOG.all { practiceFor(it.title) != null })
     }
 
+    // ---------- in-app dhamma.org browser ----------
+
+    @Test
+    fun `only the publisher's own hosts count as dhamma hosts`() {
+        assertTrue(isDhammaHost("discourses.dhamma.org"))
+        assertTrue(isDhammaHost("www.dhamma.org"))
+        assertTrue(isDhammaHost("DHAMMA.org"))
+        assertFalse(isDhammaHost("dhamma.org.evil.com"))
+        assertFalse(isDhammaHost("notdhamma.org"))
+        assertFalse(isDhammaHost(null))
+    }
+
+    @Test
+    fun `audio urls are recognised by path, ignoring the query`() {
+        assertTrue(isAudioUrl("https://discourses.dhamma.org/oml/recordings/uuid/abc.mp3"))
+        assertTrue(isAudioUrl("https://x.dhamma.org/a/b.MP3?token=1"))
+        assertFalse(isAudioUrl("https://discourses.dhamma.org/recordings/group_sittings?x=.mp3"))
+        assertFalse(isAudioUrl("https://discourses.dhamma.org/login"))
+        assertFalse(isAudioUrl(null))
+    }
+
+    @Test
+    fun `site labels are tidied into short titles without repeats`() {
+        // exactly what the site shows for an "Edited for VGS" sitting
+        assertEquals(
+            "Vipassana · Long Instructions (Edited for VGS) · Dhamma Setu · 2000",
+            tidyRecordingLabel(
+                "Group Sitting • Group Sitting • Long Instructions (Edited for VGS) • Group Sitting • " +
+                    "Long Instructions (Edited for VGS) • English • English • Dhamma Setu • 2000"
+            ),
+        )
+        // a recording page heading
+        assertEquals(
+            "Vipassana · Short Instructions · Juhu, Mumbai, India · 1987",
+            tidyRecordingLabel("Group Sitting • Short Instructions • English • Juhu, Mumbai, India • 1987"),
+        )
+        // a list card, flagged as a group sitting by the page
+        assertEquals(
+            "Vipassana · Short Instructions · Juhu, Mumbai, India · 1987",
+            tidyRecordingLabel("Short Instructions · Juhu, Mumbai, India · 1987", groupSitting = true),
+        )
+        // other languages are kept; non-sittings get no practice prefix
+        assertEquals("Vipassana · Long Instructions · Hindi · Dhamma Giri", tidyRecordingLabel("Group Sitting • Long Instructions • Hindi • Dhamma Giri"))
+        assertEquals("Day 1 · 10-Day Discourse", tidyRecordingLabel("Day 1 • 10-Day Discourse • English"))
+        assertEquals("", tidyRecordingLabel("  "))
+    }
+
+    @Test
+    fun `a saved web recording is a user file named after its title, never cut from the front`() {
+        val title = tidyRecordingLabel(
+            "Group Sitting • Group Sitting • Long Instructions (Edited for VGS) • Group Sitting • " +
+                "Long Instructions (Edited for VGS) • English • English • Dhamma Setu • 2000"
+        )
+        val name = webRecordingFileName(title, "https://resources.dhamma.org/oml/recordings/uuid/abc.mp3")
+        assertEquals("user-Vipassana · Long Instructions (Edited for VGS) · Dhamma Setu · 2000.mp3", name)
+        assertEquals("Vipassana", practiceFor(recordingTitle(name)))
+        // no title: fall back to the file's own name
+        assertEquals("user-abc.mp3", webRecordingFileName("  ", "https://x.dhamma.org/r/abc.mp3?t=1"))
+    }
+
     // ---------- volume curve ----------
 
     @Test

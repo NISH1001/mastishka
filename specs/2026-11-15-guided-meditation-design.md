@@ -59,13 +59,32 @@ as today. In Guided it is replaced by a "Guided meditation" card:
 - A recording not yet on the phone shows its length, size and a download icon. Choosing it
   starts the download; the icon becomes a progress ring with the percentage. Once on the
   phone the row shows its length.
-- "1-hour Vipassana group sitting (old students)" opens dhamma.org's old-student login in
-  the browser. The app cannot fetch these itself (see anti-goals).
+- "Explore more sittings" opens dhamma.org's recordings site inside the app (see below).
 - "Add your own recording" picks an audio file; the app keeps its own copy and selects it.
 - Long-press a recording that is on the phone to remove it (a built-in one can be
   downloaded again).
 
 No explanatory text in the card: the rows speak for themselves.
+
+**Explore more sittings (in-app dhamma.org).** The group sittings (long, short, minimal and
+no instructions) are served only to logged-in old students, so they cannot be in the
+built-in list. Instead the recordings site opens inside Mastishka:
+
+- The person signs in with their own old-student login, once. The site's sign-in cookie has
+  no expiry, so the app re-stores it with a long life after each page; the next visit opens
+  straight on the group sittings.
+- Tapping the site's own Download button saves that recording into the Guided list, with a
+  progress ring and then "Saved to Guided · <title>". Nothing goes to the Downloads folder.
+- A page about a single recording also shows a "Save this recording" button. List pages
+  do not.
+- Titles come from the site's label, tidied: repeats and the parts every sitting shares
+  ("Group Sitting", "English") are dropped and a group sitting is prefixed "Vipassana",
+  e.g. "Vipassana · Long Instructions · Dhamma Giri · 1992".
+- The page stays on dhamma.org; other links open in the phone's browser. A saved file must
+  be readable as audio, so a login or error page can never land in the list.
+
+The app holds no login and no links to these recordings; each person reaches them through
+their own sign-in.
 
 **Begin button.** Disabled in Guided until the chosen recording is on the phone. While that
 recording downloads, the button shows the progress ring and percentage in place of the play
@@ -95,9 +114,14 @@ moment. A guided sit adds the recording's name and a Pause/Resume button.
   so the phone's alarm volume does not change what the slider means.
 - Recording: plays as media. The slider scales it on top of the phone's media volume, which
   the app never changes; the side buttons work during the sit.
+- In Guided with a recording chosen, the Sound card's test button is "Test recording": it
+  plays the first 20 seconds as a sit would. The slider changes a playing preview live.
 - Tapping Begin in Guided warns first if the recording would be inaudible: slider at 0%,
   media volume at zero, or Do Not Disturb in total-silence mode. Other Do Not Disturb modes
   normally allow media; detection beyond total silence is not attempted.
+
+**Practice.** Choosing a recording pre-selects the practice its title names (Anapana, or
+Vipassana for "Vipassana"/"Group sitting"); the chip can still be changed.
 
 **History.** The saved sit keeps the practice chip as its type and stores the recording's
 title, shown on its history row as "Guided · <title>". Post-sit calmness, notes and Metta are
@@ -107,8 +131,9 @@ unchanged.
 
 - Catalog: `GUIDE_CATALOG` in `data/Guided.kt` (id, title, public https link, approximate
   length, size). Adding a teacher or recording is adding an entry.
-- Storage: `filesDir/guided/`. A catalog recording is `<id>.mp3`; a user-added one is
-  `user-<name>`. Downloads go to a `.part` file and are renamed only when complete.
+- Storage: `filesDir/guided/`. A catalog recording is `<id>.mp3`; a user-added or
+  site-saved one is `user-<name>`. Downloads go to a `.part` file and are renamed only when complete.
+- The in-app site is `ui/DhammaBrowser.kt` (a WebView limited to `*.dhamma.org`).
 - Playback lives in `TimerService` with the platform `MediaPlayer`; no new library. The sit
   clock is `SitClock`, which counts only time spent running.
 - The app gained the `INTERNET` permission, used only for these downloads.
@@ -119,8 +144,9 @@ unchanged.
 ## Not yet done
 
 - "Add your own recording" has not been exercised with a real file on a phone.
-- Getting an old-students-only recording into the app is still a manual path (browser or
-  the Dhamma.org app, then add). An in-app dhamma.org page that saves the chosen recording
-  straight into the list, using the person's own login, was proposed and is undecided.
+- "1 Hour Sitting with Mettā" exists only in the official Dhamma.org app, not on the
+  recordings site, so it cannot be saved through the in-app page.
 - The Metta people list is not part of Drive sync (sits are); a reinstall restores it only
   from a manual export or a database copy.
+- v0.6.0 is signed with a different debug key from v0.5.2 and earlier, so it cannot install
+  over them (see the release notes).

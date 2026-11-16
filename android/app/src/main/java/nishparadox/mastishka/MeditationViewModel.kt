@@ -4,6 +4,7 @@ import android.app.Application
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
@@ -35,13 +36,18 @@ import nishparadox.mastishka.data.parseSitLines
 import nishparadox.mastishka.data.practiceFor
 import nishparadox.mastishka.data.recordingFileName
 import nishparadox.mastishka.data.userRecordingFileName
+import nishparadox.mastishka.data.recordingTitle
 import nishparadox.mastishka.data.volumeGain
+import nishparadox.mastishka.data.webRecordingFileName
 import nishparadox.mastishka.health.HealthConnectManager
 import nishparadox.mastishka.service.TimerService
 import nishparadox.mastishka.service.gongAudioAttributes
 import nishparadox.mastishka.service.headphonesConnected
 import androidx.health.connect.client.HealthConnectClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -326,9 +332,13 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
     fun updateGongVolume(volume: Float) {
         gongVolume = volume.coerceIn(0f, 1f)
         viewModelScope.launch { settings.setGongVolume(gongVolume) }
+        // A preview that is playing follows the slider, so the level can be set by ear.
+        val gain = volumeGain(gongVolume)
+        testPlayer?.let { runCatching { it.setVolume(gain, gain) } }
     }
 
     fun startSit() {
+        stopTestGong() // a preview must not play over the sit
         selectedPeople.clear()
         lastSitHr = null
         val rec = selectedRecording.takeIf { guidedMode && it?.downloaded == true }
@@ -420,45 +430,117 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         downloadProgress[id] = 0f
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                val part = File(guideDir(), "$id.part")
                 runCatching {
-                    val conn = URL(entry.url).openConnection() as HttpURLConnection
-                    conn.connectTimeout = 15_000
-                    conn.readTimeout = 30_000
-                    try {
-                        if (conn.responseCode != HttpURLConnection.HTTP_OK) error("HTTP ${conn.responseCode}")
-                        val total = conn.contentLengthLong.takeIf { it > 0 } ?: entry.sizeBytes
-                        var done = 0L
-                        var shown = 0
-                        conn.inputStream.use { input ->
-                            part.outputStream().use { out ->
-                                val buffer = ByteArray(64 * 1024)
-                                while (true) {
-                                    ensureActive()
-                                    val n = input.read(buffer)
-                                    if (n < 0) break
-                                    out.write(buffer, 0, n)
-                                    done += n
-                                    val percent = (done * 100 / total).toInt().coerceIn(0, 100)
-                                    if (percent != shown) {
-                                        shown = percent
-                                        downloadProgress[id] = percent / 100f
-                                    }
-                                }
-                            }
-                        }
-                        if (done == 0L) error("empty download")
-                        if (!part.renameTo(File(guideDir(), recordingFileName(id)))) error("couldn't save")
-                    } finally {
-                        conn.disconnect()
-                    }
-                }.onFailure { part.delete() }
+                    fetchAudio(
+                        url = entry.url,
+                        headers = emptyMap(),
+                        targetName = recordingFileName(id),
+                        fallbackTotal = entry.sizeBytes,
+                        checkPlayable = false,
+                    ) { downloadProgress[id] = it }
+                }
             }
             downloadProgress.remove(id)
             if (result.isFailure) {
                 guideMessage = "Couldn't download “${entry.title}”. Check your connection and tap it again."
             }
             refreshRecordings()
+        }
+    }
+
+    /**
+     * Fetch an audio file into the guided folder as [targetName], reporting progress 0..1.
+     * Written to a `.part` file and renamed only when complete. With [checkPlayable], the
+     * result must be readable as audio — a login or error page saved under an audio name is
+     * rejected. Runs on the caller's (IO) dispatcher; throws on any failure.
+     */
+    private suspend fun fetchAudio(
+        url: String,
+        headers: Map<String, String>,
+        targetName: String,
+        fallbackTotal: Long,
+        checkPlayable: Boolean,
+        onProgress: (Float) -> Unit,
+    ) {
+        val part = File(guideDir(), "$targetName.part")
+        try {
+            val conn = URL(url).openConnection() as HttpURLConnection
+            conn.connectTimeout = 15_000
+            conn.readTimeout = 30_000
+            headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+            try {
+                if (conn.responseCode != HttpURLConnection.HTTP_OK) error("HTTP ${conn.responseCode}")
+                val total = conn.contentLengthLong.takeIf { it > 0 } ?: fallbackTotal.coerceAtLeast(1)
+                var done = 0L
+                var shown = 0
+                conn.inputStream.use { input ->
+                    part.outputStream().use { out ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            out.write(buffer, 0, n)
+                            done += n
+                            val percent = (done * 100 / total).toInt().coerceIn(0, 100)
+                            if (percent != shown) {
+                                shown = percent
+                                onProgress(percent / 100f)
+                            }
+                        }
+                    }
+                }
+                if (done == 0L) error("empty download")
+                if (checkPlayable && audioDurationMillis(part) <= 0L) error("not playable audio")
+                if (!part.renameTo(File(guideDir(), targetName))) error("couldn't save")
+            } finally {
+                conn.disconnect()
+            }
+        } finally {
+            part.delete()
+        }
+    }
+
+    // ---------- In-app dhamma.org browser ----------
+
+    /** State of a save started from the in-app browser. */
+    sealed interface WebSave {
+        data class Saving(val title: String, val progress: Float) : WebSave
+        data class Saved(val title: String) : WebSave
+        data class Failed(val title: String) : WebSave
+    }
+
+    var webSave by mutableStateOf<WebSave?>(null)
+        private set
+
+    fun clearWebSave() {
+        if (webSave !is WebSave.Saving) webSave = null
+    }
+
+    /**
+     * Save a recording the user opened in the in-app browser, using their own signed-in
+     * session ([cookie]) — the same request their browser would make. It lands in the Guided
+     * list as one of their own recordings and becomes the selected one.
+     */
+    fun saveWebRecording(url: String, title: String, cookie: String?, userAgent: String?) {
+        if (webSave is WebSave.Saving) return
+        val name = webRecordingFileName(title, url)
+        val shown = recordingTitle(name.removePrefix("user-"))
+        webSave = WebSave.Saving(shown, 0f)
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val headers = buildMap {
+                        if (!cookie.isNullOrBlank()) put("Cookie", cookie)
+                        if (!userAgent.isNullOrBlank()) put("User-Agent", userAgent)
+                    }
+                    fetchAudio(url, headers, name, fallbackTotal = 60L * 1024 * 1024, checkPlayable = true) {
+                        webSave = WebSave.Saving(shown, it)
+                    }
+                }
+            }
+            webSave = if (result.isSuccess) WebSave.Saved(shown) else WebSave.Failed(shown)
+            if (result.isSuccess) selectRecordingAfterRefresh(name)
         }
     }
 
@@ -745,9 +827,51 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun stopTestGong() {
+        previewStop?.cancel()
+        previewStop = null
         testPlayer?.let { runCatching { it.release() } }
         testPlayer = null
         restoreAlarmVolume()
+    }
+
+    private var previewStop: Job? = null
+
+    /** True when the test button should preview the chosen recording rather than the gong. */
+    val canPreviewRecording: Boolean get() = guidedMode && selectedRecording?.downloaded == true
+
+    /**
+     * Play the first seconds of the chosen recording exactly as a guided sit would — as media,
+     * at the slider's level on top of the phone's media volume — so the level can be set
+     * before sitting. Stops by itself.
+     */
+    fun testRecording() {
+        stopTestGong()
+        val rec = selectedRecording?.takeIf { it.downloaded } ?: return
+        val player = MediaPlayer()
+        try {
+            player.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            player.setDataSource(File(guideDir(), recordingFileName(rec.id)).absolutePath)
+            val gain = volumeGain(gongVolume)
+            player.setVolume(gain, gain)
+            player.setOnPreparedListener { it.start() }
+            player.setOnCompletionListener { stopTestGong() }
+            player.setOnErrorListener { _, _, _ -> stopTestGong(); true }
+            player.prepareAsync()
+            testPlayer = player
+            previewStop = viewModelScope.launch {
+                delay(PREVIEW_MILLIS)
+                previewStop = null
+                stopTestGong()
+            }
+        } catch (e: Exception) {
+            runCatching { player.release() }
+            guideMessage = "Couldn't play that recording."
+        }
     }
 
     // Max the alarm stream only while the test gong sounds, restoring the user's level after.
@@ -776,6 +900,9 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         super.onCleared()
     }
 }
+
+/** How long the test button previews a recording before stopping by itself. */
+private const val PREVIEW_MILLIS = 20_000L
 
 /** Heart-rate summary for a sit: avg/min/max bpm + a downsampled series for charting. */
 data class HrSummary(val avg: Int, val min: Int, val max: Int, val series: List<Int>) {

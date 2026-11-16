@@ -11,8 +11,10 @@ Drive sync (one folder grant; sits travel as per-device jsonl — see
 - **Sit timer** — gong rings at zero without interrupting; overtime keeps counting.
 - **Guided sits (v0.6.0)** — switch Silent → Guided and choose a recording. Built-in ones
   (Goenka's Mini Anapana) download once from dhamma.org on first use, then play offline;
-  "Add your own recording" brings in any other audio file. Pause/resume, no gong, and the
-  recording's name is saved with the sit. The app ships no audio — see
+  "Explore more sittings" opens dhamma.org inside the app, where an old student signs in once
+  and the site's Download button saves a group sitting straight into the list; "Add your own
+  recording" brings in any other audio file. Pause/resume, no gong, and the recording's name
+  is saved with the sit. The app ships no audio — see
   [`../specs/2026-11-15-guided-meditation-design.md`](../specs/2026-11-15-guided-meditation-design.md).
 - **Volume/gong sound** (Small / Medium / Large) with a test button; the slider follows a
   perceptual curve and also sets the recording's loudness in a guided sit.
@@ -97,7 +99,9 @@ app/src/main/java/nishparadox/mastishka/
   service/TimerService.kt      # foreground clock, gong, wake lock, notification
   data/AppData.kt              # Room entities/DAOs/DB + DataStore settings
   data/Backup.kt               # schema-1 session JSON: backup envelope + sit-lines jsonl
+  data/Guided.kt               # guided sits: recording catalog, titles, volume curve, sit clock
   ui/Screens.kt                # Setup / Sit / Metta / History composables
+  ui/DhammaBrowser.kt          # in-app dhamma.org page that saves sittings into the list
   ui/Theme.kt                  # Compose Material3 theme
 app/src/main/res/raw/gong_{small,medium,large}.ogg   # synthesized gongs
 ```

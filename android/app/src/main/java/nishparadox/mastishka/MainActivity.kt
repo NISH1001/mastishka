@@ -22,13 +22,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import nishparadox.mastishka.ui.DhammaBrowserScreen
 import nishparadox.mastishka.ui.HistoryScreen
 import nishparadox.mastishka.ui.MastishkaTheme
 import nishparadox.mastishka.ui.MettaScreen
 import nishparadox.mastishka.ui.SetupScreen
 import nishparadox.mastishka.ui.SitScreen
 
-private enum class Screen { Setup, Sit, Metta, History }
+private enum class Screen { Setup, Sit, Metta, History, Dhamma }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -61,7 +62,10 @@ private fun App(vm: MeditationViewModel) {
             vm = vm,
             onStart = { vm.startSit(); screen = Screen.Sit },
             onHistory = { screen = Screen.History },
+            onMoreRecordings = { screen = Screen.Dhamma },
         )
+
+        Screen.Dhamma -> DhammaBrowserScreen(vm = vm, onBack = { screen = Screen.Setup })
 
         Screen.Sit -> SitScreen(
             state = timer,
