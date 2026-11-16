@@ -29,6 +29,21 @@ class BackupTest {
         ),
     )
 
+    // ---------- guided sits ----------
+
+    @Test
+    fun `guide name round-trips through envelope and sit lines`() {
+        val guided = sits[0].copy(guide = "Goenka - Mini Anapana")
+        assertEquals(guided, parseBackup(exportJson(listOf(guided), emptyList(), "0.6.0", 1L)).sessions.single())
+        assertEquals(guided, parseSitLines(exportSitLines(listOf(guided))).single())
+    }
+
+    @Test
+    fun `records written before guided sits existed read as silent`() {
+        val old = """{"startedAt":1751500000000,"plannedMillis":600000,"totalMillis":600000,"calmness":3,"people":[],"notes":"","type":"Anapana"}"""
+        assertEquals("", parseSitLines(old).single().guide)
+    }
+
     // ---------- envelope backup (existing behavior, pinned for the refactor) ----------
 
     @Test

@@ -1,14 +1,18 @@
 package nishparadox.mastishka
 
 import android.app.Application
+import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import android.media.AudioManager
+import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.documentfile.provider.DocumentFile
@@ -18,22 +22,32 @@ import nishparadox.mastishka.data.AppDatabase
 import nishparadox.mastishka.data.BackupFormatException
 import nishparadox.mastishka.data.GongType
 import nishparadox.mastishka.data.Person
+import nishparadox.mastishka.data.Recording
 import nishparadox.mastishka.data.Session
 import nishparadox.mastishka.data.SettingsStore
 import nishparadox.mastishka.data.deviceIdFromFileName
 import nishparadox.mastishka.data.exportJson
 import nishparadox.mastishka.data.exportSitLines
 import nishparadox.mastishka.data.parseHistoryFile
+import nishparadox.mastishka.data.GUIDE_CATALOG
+import nishparadox.mastishka.data.buildLibrary
 import nishparadox.mastishka.data.parseSitLines
+import nishparadox.mastishka.data.recordingFileName
+import nishparadox.mastishka.data.userRecordingFileName
+import nishparadox.mastishka.data.volumeGain
 import nishparadox.mastishka.health.HealthConnectManager
 import nishparadox.mastishka.service.TimerService
 import nishparadox.mastishka.service.gongAudioAttributes
 import nishparadox.mastishka.service.headphonesConnected
 import androidx.health.connect.client.HealthConnectClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 
 class MeditationViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -92,6 +106,24 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
     var hrLoading by mutableStateOf(false)
         private set
 
+    // Guided sits: the Silent/Guided switch and the list of recordings (built-in catalog,
+    // downloaded on demand, plus files the user added).
+    var guidedMode by mutableStateOf(false)
+        private set
+    var recordings by mutableStateOf(buildLibrary(GUIDE_CATALOG, emptyMap()))
+        private set
+    var selectedRecordingId by mutableStateOf("")
+        private set
+    /** Recording id → 0..1 while it is downloading (absent = not downloading). */
+    val downloadProgress = mutableStateMapOf<String, Float>()
+    /** One-shot message about a failed download or add, for the screen to show and clear. */
+    var guideMessage by mutableStateOf<String?>(null)
+        private set
+    val selectedRecording: Recording? get() = recordings.firstOrNull { it.id == selectedRecordingId }
+    /** Begin is possible: always for a silent sit; for a guided one only once the chosen
+     *  recording is on the phone. */
+    val canBegin: Boolean get() = !guidedMode || selectedRecording?.downloaded == true
+
     private var testPlayer: MediaPlayer? = null
 
     init {
@@ -104,6 +136,9 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { nepaliTitle = settings.nepaliTitle.first() }
         viewModelScope.launch { driveRoot = settings.driveRoot.first() }
         viewModelScope.launch { deviceId = settings.deviceId() }
+        viewModelScope.launch { guidedMode = settings.guidedMode.first() }
+        viewModelScope.launch { selectedRecordingId = settings.guideSelected.first() }
+        refreshRecordings()
         refreshHealthConnect()
     }
 
@@ -295,7 +330,181 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
     fun startSit() {
         selectedPeople.clear()
         lastSitHr = null
-        TimerService.start(getApplication(), durationMinutes * 60_000L, gongVolume, gongType.rawResId)
+        val rec = selectedRecording.takeIf { guidedMode && it?.downloaded == true }
+        if (rec == null) {
+            TimerService.start(getApplication(), durationMinutes * 60_000L, gongVolume, gongType.rawResId)
+        } else {
+            TimerService.start(
+                getApplication(), rec.durationMillis, gongVolume, gongType.rawResId,
+                guideUri = Uri.fromFile(File(guideDir(), recordingFileName(rec.id))).toString(),
+                guideTitle = rec.title,
+            )
+        }
+    }
+
+    fun pauseSit() = TimerService.pause(getApplication())
+
+    fun resumeSit() = TimerService.resume(getApplication())
+
+    // ---------- Guided sits ----------
+
+    fun updateGuidedMode(enabled: Boolean) {
+        guidedMode = enabled
+        viewModelScope.launch { settings.setGuidedMode(enabled) }
+        if (enabled) refreshRecordings()
+    }
+
+    fun clearGuideMessage() {
+        guideMessage = null
+    }
+
+    /** App-private folder holding downloaded and user-added recordings. */
+    private fun guideDir(): File =
+        File(getApplication<Application>().filesDir, "guided").apply { mkdirs() }
+
+    /** Choose a recording. One that is not on the phone yet starts downloading right away. */
+    fun selectRecording(id: String) {
+        selectedRecordingId = id
+        viewModelScope.launch { settings.setGuideSelected(id) }
+        if (recordings.firstOrNull { it.id == id }?.downloaded == false) downloadRecording(id)
+    }
+
+    /** Re-read the guided folder: which recordings are on the phone, and how long each is. */
+    fun refreshRecordings() {
+        viewModelScope.launch {
+            recordings = withContext(Dispatchers.IO) {
+                val files = guideDir().listFiles().orEmpty()
+                    .filter { it.isFile && !it.name.endsWith(".part") }
+                    .associate { it.name to audioDurationMillis(it) }
+                buildLibrary(GUIDE_CATALOG, files)
+            }
+        }
+    }
+
+    private fun audioDurationMillis(file: File): Long {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(file.absolutePath)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+        } catch (e: Exception) {
+            0L
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
+    /**
+     * Download a catalog recording once, straight from its publisher's public link, into the
+     * guided folder. Written to a `.part` file and renamed only when complete, so an
+     * interrupted download never looks like a playable recording.
+     */
+    private fun downloadRecording(id: String) {
+        val entry = GUIDE_CATALOG.firstOrNull { it.id == id } ?: return
+        if (downloadProgress.containsKey(id)) return
+        downloadProgress[id] = 0f
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                val part = File(guideDir(), "$id.part")
+                runCatching {
+                    val conn = URL(entry.url).openConnection() as HttpURLConnection
+                    conn.connectTimeout = 15_000
+                    conn.readTimeout = 30_000
+                    try {
+                        if (conn.responseCode != HttpURLConnection.HTTP_OK) error("HTTP ${conn.responseCode}")
+                        val total = conn.contentLengthLong.takeIf { it > 0 } ?: entry.sizeBytes
+                        var done = 0L
+                        var shown = 0
+                        conn.inputStream.use { input ->
+                            part.outputStream().use { out ->
+                                val buffer = ByteArray(64 * 1024)
+                                while (true) {
+                                    ensureActive()
+                                    val n = input.read(buffer)
+                                    if (n < 0) break
+                                    out.write(buffer, 0, n)
+                                    done += n
+                                    val percent = (done * 100 / total).toInt().coerceIn(0, 100)
+                                    if (percent != shown) {
+                                        shown = percent
+                                        downloadProgress[id] = percent / 100f
+                                    }
+                                }
+                            }
+                        }
+                        if (done == 0L) error("empty download")
+                        if (!part.renameTo(File(guideDir(), recordingFileName(id)))) error("couldn't save")
+                    } finally {
+                        conn.disconnect()
+                    }
+                }.onFailure { part.delete() }
+            }
+            downloadProgress.remove(id)
+            if (result.isFailure) {
+                guideMessage = "Couldn't download “${entry.title}”. Check your connection and tap it again."
+            }
+            refreshRecordings()
+        }
+    }
+
+    /** Copy an audio file the user picked into the guided folder and select it. */
+    fun addRecording(uri: Uri) {
+        viewModelScope.launch {
+            val added = withContext(Dispatchers.IO) {
+                runCatching {
+                    val app = getApplication<Application>()
+                    val name = userRecordingFileName(documentDisplayName(uri))
+                    val target = File(guideDir(), name)
+                    val part = File(guideDir(), "$name.part")
+                    try {
+                        app.contentResolver.openInputStream(uri)?.use { input ->
+                            part.outputStream().use { input.copyTo(it) }
+                        } ?: error("couldn't open file")
+                        // Only keep it if the phone can actually read it as audio.
+                        if (audioDurationMillis(part) <= 0L) error("not playable audio")
+                        if (!part.renameTo(target)) error("couldn't save")
+                    } finally {
+                        part.delete()
+                    }
+                    name
+                }
+            }
+            added.onSuccess { selectRecordingAfterRefresh(it) }
+                .onFailure { guideMessage = "Couldn't add that file — it doesn't look like playable audio." }
+        }
+    }
+
+    private fun selectRecordingAfterRefresh(id: String) {
+        selectedRecordingId = id
+        viewModelScope.launch { settings.setGuideSelected(id) }
+        refreshRecordings()
+    }
+
+    /** Delete a recording from the phone. A built-in one goes back to "tap to download". */
+    fun removeRecording(id: String) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { File(guideDir(), recordingFileName(id)).delete() }
+            refreshRecordings()
+        }
+    }
+
+    /**
+     * Why a guided recording would be inaudible right now, or null if it should be heard.
+     * The recording plays as media, and the app never changes the phone's media volume.
+     */
+    fun guidedSilenceWarning(): String? {
+        val app = getApplication<Application>()
+        val am = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (gongVolume <= 0f) return "The volume slider below is at 0%, so the recording will be silent."
+        if (am.getStreamVolume(AudioManager.STREAM_MUSIC) == 0 || am.isStreamMute(AudioManager.STREAM_MUSIC)) {
+            return "Your phone's media volume is at zero, so the recording will be silent. " +
+                "Turn it up with the volume buttons."
+        }
+        // Best effort: "total silence" Do Not Disturb mutes media. Other modes usually allow it.
+        val nm = app.getSystemService(NotificationManager::class.java)
+        if (nm.currentInterruptionFilter == NotificationManager.INTERRUPTION_FILTER_NONE) {
+            return "Do Not Disturb is set to total silence, which mutes media, so the recording will be silent."
+        }
+        return null
     }
 
     fun endSit() {
@@ -327,6 +536,7 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
             people = selectedPeople.toList(),
             notes = notes.trim(),
             type = meditationType.ifBlank { "Meditation" },
+            guide = s.guideTitle,
             hrAvg = hr?.avg ?: 0,
             hrMin = hr?.min ?: 0,
             hrMax = hr?.max ?: 0,
@@ -510,7 +720,8 @@ class MeditationViewModel(app: Application) : AndroidViewModel(app) {
         }
         val afd = getApplication<Application>().resources.openRawResourceFd(gongType.rawResId) ?: return
         afd.use { player.setDataSource(it.fileDescriptor, it.startOffset, it.length) }
-        player.setVolume(gongVolume, gongVolume)
+        val gain = volumeGain(gongVolume)
+        player.setVolume(gain, gain)
         player.setOnPreparedListener { if (!onHeadphones) raiseAlarmVolume(); it.start() }
         player.setOnCompletionListener { stopTestGong() }
         player.prepareAsync()

@@ -33,6 +33,7 @@ private fun sessionToJson(s: Session): JSONObject = JSONObject().apply {
     put("hrMin", s.hrMin)
     put("hrMax", s.hrMax)
     put("hrSeries", s.hrSeries) // comma-string, as stored
+    put("guide", s.guide) // recording title for a guided sit; "" = silent
 }
 
 /** Inverse of [sessionToJson]. Tolerant of missing fields (entity defaults apply). */
@@ -50,6 +51,7 @@ private fun sessionFromJson(o: JSONObject): Session {
         hrMin = o.optInt("hrMin", 0),
         hrMax = o.optInt("hrMax", 0),
         hrSeries = o.optString("hrSeries", ""),
+        guide = o.optString("guide", ""),
     )
 }
 

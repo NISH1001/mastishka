@@ -9,7 +9,13 @@ Drive sync (one folder grant; sits travel as per-device jsonl — see
 `applicationId`: `nishparadox.mastishka` · `minSdk` 26 · `compileSdk` 36
 
 - **Sit timer** — gong rings at zero without interrupting; overtime keeps counting.
-- **Gong volume/sound** (Small / Medium / Large) with a test button.
+- **Guided sits (v0.6.0)** — switch Silent → Guided and choose a recording. Built-in ones
+  (Goenka's Mini Anapana) download once from dhamma.org on first use, then play offline;
+  "Add your own recording" brings in any other audio file. Pause/resume, no gong, and the
+  recording's name is saved with the sit. The app ships no audio — see
+  [`../specs/2026-11-15-guided-meditation-design.md`](../specs/2026-11-15-guided-meditation-design.md).
+- **Volume/gong sound** (Small / Medium / Large) with a test button; the slider follows a
+  perceptual curve and also sets the recording's loudness in a guided sit.
 - **Practice type** — Vipassana / Anapana / … (defaults to "Meditation").
 - **Post-sit** — calmness check + notes (voice-to-text friendly); Metta Bhavana people
   for Vipassana sits.

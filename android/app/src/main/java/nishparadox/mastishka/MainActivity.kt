@@ -66,6 +66,8 @@ private fun App(vm: MeditationViewModel) {
         Screen.Sit -> SitScreen(
             state = timer,
             onEnd = { vm.endSit(); screen = Screen.Metta },
+            onPause = vm::pauseSit,
+            onResume = vm::resumeSit,
         )
 
         Screen.Metta -> MettaScreen(
